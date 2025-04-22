@@ -2,10 +2,12 @@ package src
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 )
 
+// ConcurrentMapWithTTL provides a thread-safe map with support for time-to-live (TTL) for its entries.
 type ConcurrentMapWithTTL[T any] struct {
 	sync.RWMutex
 	data         map[string]IMapNode[T]
@@ -13,17 +15,35 @@ type ConcurrentMapWithTTL[T any] struct {
 	cancel       context.CancelFunc
 	ttl          time.Duration
 	ttlDecrement time.Duration
+	isClosed     bool
+	tickerOnce   sync.Once
 }
 
-func NewConcurrentMapWithTTL[T any](ctx context.Context) ICacheInMemory[T] {
+// NewConcurrentMapWithTTL creates a new concurrent map with TTL support and starts a background TTL management goroutine.
+func NewConcurrentMapWithTTL[T any](ctx context.Context, ttl, ttlDecrement time.Duration) ICacheInMemory[T] {
 	cMap := &ConcurrentMapWithTTL[T]{}
 	cMap.data = make(map[string]IMapNode[T])
 	cMap.ctx, cMap.cancel = context.WithCancel(ctx)
 
+	if ttl <= 0 || ttlDecrement <= 0 || ttlDecrement > ttl {
+		cMap.ttl = 5 * time.Second
+		cMap.ttlDecrement = 1 * time.Second
+	} else {
+		cMap.ttl = ttl
+		cMap.ttlDecrement = ttlDecrement
+	}
+
 	return cMap
 }
 
+// Range iterates over all key-value pairs in the map, executing the provided callback function for each pair.
+// The iteration stops if the callback function returns false.
+// Returns an error if the operation cannot be performed.
 func (cMap *ConcurrentMapWithTTL[T]) Range(callback func(key string, value T) bool) error {
+	if cMap.isClosed {
+		return errors.New("ConcurrentMapWithTTL.Range ERROR: cannot perform operation on closed cache")
+	}
+
 	cMap.RLock()
 	defer cMap.RUnlock()
 	for key, node := range cMap.data {
@@ -34,10 +54,19 @@ func (cMap *ConcurrentMapWithTTL[T]) Range(callback func(key string, value T) bo
 	return nil
 }
 
+// Set adds or updates a key-value pair in the map, initializing a new node if the key does not exist.
 func (cMap *ConcurrentMapWithTTL[T]) Set(key string, value T) error {
-	cMap.Lock()
-	defer cMap.Unlock()
+	if cMap.isClosed {
+		return errors.New("ConcurrentMapWithTTL.Set ERROR: cannot perform operation on closed cache")
+	}
 
+	defer func() {
+		cMap.tickerOnce.Do(func() {
+			go cMap.tickCollection()
+		})
+	}()
+
+	cMap.Lock()
 	if node, ok := cMap.data[key]; ok {
 		node.SetData(value)
 	} else {
@@ -45,24 +74,21 @@ func (cMap *ConcurrentMapWithTTL[T]) Set(key string, value T) error {
 		newNode.SetTTL(cMap.ttl)
 		newNode.SetTTLDecrement(cMap.ttlDecrement)
 		newNode.SetRemoveCallback(func() {
-			cMap.Delete(key)
+			go cMap.Delete(key)
 		})
 		cMap.data[key] = newNode
 	}
+	cMap.Unlock()
 
 	return nil
 }
 
-func (cMap *ConcurrentMapWithTTL[T]) Delete(key string) {
-	cMap.Lock()
-	defer cMap.Unlock()
-	if node, ok := cMap.data[key]; ok {
-		node.Clear()
-		delete(cMap.data, key)
-	}
-}
-
+// Get retrieves the value associated with the given key and a boolean indicating if the key exists in the map.
 func (cMap *ConcurrentMapWithTTL[T]) Get(key string) (T, bool) {
+	if cMap.isClosed {
+		return *new(T), false
+	}
+
 	cMap.RLock()
 	defer cMap.RUnlock()
 
@@ -73,43 +99,74 @@ func (cMap *ConcurrentMapWithTTL[T]) Get(key string) (T, bool) {
 	return *new(T), false
 }
 
+// Delete removes a key and its associated data from the map, clearing the node before deletion if it exists.
+func (cMap *ConcurrentMapWithTTL[T]) Delete(key string) {
+	if cMap.isClosed {
+		return
+	}
+
+	cMap.Lock()
+	defer cMap.Unlock()
+	if node, ok := cMap.data[key]; ok {
+		node.Clear()
+		delete(cMap.data, key)
+	}
+}
+
+// Clear removes all elements from the map and clears their associated nodes.
 func (cMap *ConcurrentMapWithTTL[T]) Clear() {
+	if cMap.isClosed {
+		return
+	}
+
+	cMap.isClosed = true
+
 	cMap.Lock()
 	defer cMap.Unlock()
 	for key, node := range cMap.data {
 		node.Clear()
 		delete(cMap.data, key)
 	}
+	cMap.data = make(map[string]IMapNode[T])
+
+	cMap.cancel()
 }
 
+// Len returns the number of elements in the map. It is safe for concurrent access.
 func (cMap *ConcurrentMapWithTTL[T]) Len() int {
+	if cMap.isClosed {
+		return 0
+	}
+
 	cMap.RLock()
 	defer cMap.RUnlock()
 	return len(cMap.data)
 }
 
-func (cMap *ConcurrentMapWithTTL[T]) SetTTL(ttl time.Duration) {
-	cMap.Lock()
-	defer cMap.Unlock()
-	cMap.ttl = ttl
-	for _, node := range cMap.data {
-		node.SetTTL(ttl)
+// tickCollection periodically decrements the TTL of each node and removes expired nodes until the context is canceled.
+func (cMap *ConcurrentMapWithTTL[T]) tickCollection() {
+	if cMap.isClosed {
+		return
 	}
-}
 
-func (cMap *ConcurrentMapWithTTL[T]) SetTTLDecrement(ttlDecrement time.Duration) {
-	cMap.Lock()
-	defer cMap.Unlock()
-	cMap.ttlDecrement = ttlDecrement
-	for _, node := range cMap.data {
-		node.SetTTLDecrement(ttlDecrement)
-	}
-}
+	ticker := time.NewTicker(cMap.ttlDecrement)
+	defer ticker.Stop()
 
-func (cMap *ConcurrentMapWithTTL[T]) Tick() {
-	cMap.Lock()
-	defer cMap.Unlock()
-	for _, node := range cMap.data {
-		node.Tick()
+	for {
+		select {
+		case <-cMap.ctx.Done():
+			cMap.Clear()
+			return
+		case <-ticker.C:
+			if cMap.isClosed {
+				return
+			}
+
+			cMap.Lock()
+			for _, node := range cMap.data {
+				node.Tick()
+			}
+			cMap.Unlock()
+		}
 	}
 }

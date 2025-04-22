@@ -20,14 +20,13 @@ type IMapNode[T any] interface {
 	Clear()
 }
 
-// ICacheInMemory defines an in-memory cache interface supporting generic types and basic operations with TTL support.
-// Set stores a key-value pair in the cache or updates an existing key with the provided value.
-// Get retrieves the value associated with a key and indicates if the key exists in the cache.
-// Delete removes a key-value pair from the cache if the key exists.
-// Clear removes all key-value pairs from the cache, resetting its state.
-// Len returns the total number of key-value pairs currently stored in the cache.
-// Range iterates over all key-value pairs, with the provided function executed for each one.
-// SetTTL assigns a time-to-live duration for entries in the cache, after which they expire.
+// ICacheInMemory defines a generic interface for in-memory caching functionality with CRUD operations and iteration support.
+// Set stores or updates a key-value pair in the cache and returns an error if the operation fails.
+// Get retrieves a value associated with the given key and a boolean indicating if the key exists in the cache.
+// Delete removes the entry corresponding to the provided key from the cache.
+// Clear removes all entries from the cache.
+// Len returns the current number of entries in the cache.
+// Range iterates over key-value pairs, applying the provided callback function, and halts if the callback returns false.
 type ICacheInMemory[T any] interface {
 	Set(key string, value T) error
 	Get(key string) (T, bool)
@@ -36,6 +35,4 @@ type ICacheInMemory[T any] interface {
 
 	Len() int
 	Range(func(key string, value T) bool) error
-	SetTTL(ttl time.Duration)
-	SetTTLDecrement(ttlDecrement time.Duration)
 }
