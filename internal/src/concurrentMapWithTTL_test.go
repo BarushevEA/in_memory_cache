@@ -464,3 +464,173 @@ func TestConcurrentMapWithTTL_TTLReset(t *testing.T) {
 	}
 	t.Error("Value should be removed after full TTL period")
 }
+
+func TestConcurrentMapWithTTL_RangeEarlyStop(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cMap := NewConcurrentMapWithTTL[string](ctx, time.Second, 100*time.Millisecond)
+
+	// Заполняем данными
+	expectedKeys := []string{"key1", "key2", "key3", "key4"}
+	for _, key := range expectedKeys {
+		cMap.Set(key, "value")
+	}
+
+	visitedKeys := make([]string, 0)
+	err := cMap.Range(func(key string, value string) bool {
+		visitedKeys = append(visitedKeys, key)
+		return len(visitedKeys) < 2 // Останавливаемся после двух элементов
+	})
+
+	if err != nil {
+		t.Errorf("Range() returned error: %v", err)
+	}
+
+	if len(visitedKeys) != 2 {
+		t.Errorf("Range() should stop after 2 elements, visited %d elements", len(visitedKeys))
+	}
+}
+
+func TestConcurrentMapWithTTL_OperationsAfterClose(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cMap := NewConcurrentMapWithTTL[string](ctx, time.Second, 100*time.Millisecond)
+
+	// Заполняем начальными данными
+	cMap.Set("key1", "value1")
+
+	// Закрываем карту
+	cMap.Clear()
+
+	// Проверяем операции после закрытия
+	tests := []struct {
+		name string
+		op   func() error
+	}{
+		{
+			name: "Set after close",
+			op: func() error {
+				return cMap.Set("key2", "value2")
+			},
+		},
+		{
+			name: "Range after close",
+			op: func() error {
+				return cMap.Range(func(key string, value string) bool {
+					return true
+				})
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.op()
+			if err == nil {
+				t.Error("Expected error for operation on closed cache")
+			}
+		})
+	}
+
+	// Проверяем Get после закрытия
+	if _, found := cMap.Get("key1"); found {
+		t.Error("Get should return not found after cache is closed")
+	}
+
+	// Проверяем Len после закрытия
+	if l := cMap.Len(); l != 0 {
+		t.Errorf("Len should return 0 after close, got %d", l)
+	}
+}
+
+func TestConcurrentMapWithTTL_InvalidTTLParameters(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	tests := []struct {
+		name         string
+		ttl          time.Duration
+		ttlDecrement time.Duration
+	}{
+		{"negative TTL", -time.Second, time.Second},
+		{"zero TTL", 0, time.Second},
+		{"negative decrement", time.Second, -time.Second},
+		{"zero decrement", time.Second, 0},
+		{"decrement larger than TTL", time.Second, 2 * time.Second},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cMap := NewConcurrentMapWithTTL[string](ctx, tt.ttl, tt.ttlDecrement)
+
+			// Проверяем, что карта использует дефолтные значения
+			err := cMap.Set("test", "value")
+			if err != nil {
+				t.Errorf("Set() failed with error: %v", err)
+			}
+
+			// Проверяем, что значение доступно
+			if val, exists := cMap.Get("test"); !exists || val != "value" {
+				t.Error("Value should be accessible after Set with default TTL values")
+			}
+
+			// Ждем немного меньше дефолтного TTL
+			time.Sleep(4 * time.Second)
+
+			// Значение все еще должно быть доступно
+			if _, exists := cMap.Get("test"); !exists {
+				t.Error("Value should still exist before default TTL expiration")
+			}
+		})
+	}
+}
+
+func TestConcurrentMapWithTTL_TickCollection(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	ttl := 300 * time.Millisecond
+	decrement := 100 * time.Millisecond
+	cMap := NewConcurrentMapWithTTL[string](ctx, ttl, decrement)
+
+	// Устанавливаем значение для запуска tickCollection
+	err := cMap.Set("key1", "value1")
+	if err != nil {
+		t.Fatalf("Failed to set initial value: %v", err)
+	}
+
+	// Проверяем, что значение существует
+	if _, exists := cMap.Get("key1"); !exists {
+		t.Fatal("Initial value should exist")
+	}
+
+	// Ждем один тик
+	time.Sleep(decrement + 10*time.Millisecond)
+
+	// Значение должно все еще существовать
+	if _, exists := cMap.Get("key1"); !exists {
+		t.Error("Value should exist after one tick")
+	}
+
+	// Ждем полного TTL
+	time.Sleep(ttl + decrement)
+
+	// Значение должно быть удалено
+	if _, exists := cMap.Get("key1"); exists {
+		t.Error("Value should be removed after TTL expiration")
+	}
+
+	// Проверяем, что tickCollection все еще работает
+	err = cMap.Set("key2", "value2")
+	if err != nil {
+		t.Fatalf("Failed to set second value: %v", err)
+	}
+
+	time.Sleep(ttl + decrement)
+
+	if _, exists := cMap.Get("key2"); exists {
+		t.Error("Second value should be removed after TTL expiration")
+	}
+}
