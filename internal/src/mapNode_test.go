@@ -366,3 +366,48 @@ func TestMapNode_ReferenceTypes(t *testing.T) {
 		t.Run(tc.name, tc.test)
 	}
 }
+
+func TestMapNode_Clear(t *testing.T) {
+	testCases := []struct {
+		name string
+		test func(t *testing.T)
+	}{
+		// ... остальные тест-кейсы ...
+
+		{
+			name: "clear and verify callback removal",
+			test: func(t *testing.T) {
+				callbackExecuted := false
+				node := NewMapNode(42).(*MapNode[int])
+
+				// Устанавливаем callback и проверяем его работу до очистки
+				node.SetRemoveCallback(func() { callbackExecuted = true })
+				node.SetTTL(5 * time.Second)
+				node.SetTTLDecrement(1 * time.Second)
+
+				// Проверяем, что callback работает до очистки
+				node.duration = 0
+				node.remove()
+				assert.True(t, callbackExecuted, "callback should work before clear")
+
+				// Сбрасываем флаг и очищаем узел
+				callbackExecuted = false
+				node.Clear()
+
+				// Проверяем, что callback удален
+				assert.Nil(t, node.remove, "callback should be nil after clear")
+
+				// Проверяем остальные поля
+				assert.Equal(t, 0, node.data, "data should be zero")
+				assert.Equal(t, time.Duration(0), node.ttl, "ttl should be zero")
+				assert.Equal(t, time.Duration(0), node.duration, "duration should be zero")
+				assert.Equal(t, time.Duration(0), node.ttlDecrement, "ttlDecrement should be zero")
+			},
+		},
+		// ... остальные тест-кейсы ...
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, tc.test)
+	}
+}

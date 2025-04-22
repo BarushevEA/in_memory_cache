@@ -36,8 +36,12 @@ func (node *MapNode[T]) SetTTLDecrement(ttlDecrement time.Duration) {
 
 // Tick decreases the node's remaining time-to-live by the decrement value and invokes the removal callback if expired.
 func (node *MapNode[T]) Tick() {
+	if node.ttlDecrement == 0 {
+		return
+	}
+
 	node.duration -= node.ttlDecrement
-	if node.duration <= 0 {
+	if node.duration <= 0 && node.remove != nil {
 		node.remove()
 	}
 }
@@ -50,5 +54,15 @@ func (node *MapNode[T]) GetData() T {
 
 // SetData sets the data for the MapNode instance.
 func (node *MapNode[T]) SetData(data T) {
+	node.duration = node.ttl
 	node.data = data
+}
+
+// Clear resets all fields of the MapNode to their zero values, effectively clearing its state and binding.
+func (node *MapNode[T]) Clear() {
+	node.duration = 0
+	node.remove = nil
+	node.ttl = 0
+	node.ttlDecrement = 0
+	node.data = *new(T)
 }

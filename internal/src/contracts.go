@@ -2,13 +2,14 @@ package src
 
 import "time"
 
-// IMapNode defines an interface for a map node supporting generic types, TTL management, and removal callbacks.
-// SetTTL sets the time-to-live (TTL) duration for the node.
-// SetTTLDecrement sets the decrement value for the node's TTL on each tick.
-// SetRemoveCallback sets a callback function to be invoked when the node expires and needs removal.
-// Tick decrements the TTL by the specified decrement value and triggers the removal callback if expired.
-// GetData retrieves the data associated with the node, resetting its TTL duration.
-// SetData sets the data for the node.
+// IMapNode defines an interface for managing nodes with generic data, time-to-live, and lifecycle management functionality.
+// SetTTL sets the time-to-live duration for the node.
+// SetTTLDecrement defines the decrement duration for the TTL on each tick operation.
+// SetRemoveCallback sets a callback function triggered when the node expires or is removed.
+// Tick decreases the TTL by the specified decrement and triggers removal if the TTL reaches zero.
+// GetData retrieves the stored data from the node, resetting its duration to the original TTL.
+// SetData assigns the specified data to the node.
+// Clear resets the node's state, removing data, TTL values, and any associated callbacks.
 type IMapNode[T any] interface {
 	SetTTL(ttl time.Duration)
 	SetTTLDecrement(ttlDecrement time.Duration)
@@ -16,6 +17,7 @@ type IMapNode[T any] interface {
 	Tick()
 	GetData() T
 	SetData(data T)
+	Clear()
 }
 
 // ICacheInMemory defines an in-memory cache interface supporting generic types and basic operations with TTL support.
