@@ -22,4 +22,7 @@ go.work
 go.work.sum
 
 # env file
-.env
+#.env
+/.idea/.gitignore
+/.idea/in_memory_cache.iml
+/.idea/modules.xml
