@@ -349,3 +349,118 @@ func TestConcurrentMapWithTTL_ZeroTTL(t *testing.T) {
 		t.Error("Value should persist with zero TTL")
 	}
 }
+
+func TestConcurrentMapWithTTL_NegativeTTL(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Создаем карту с отрицательным TTL
+	cMap := NewConcurrentMapWithTTL[string](ctx, -time.Second, time.Millisecond)
+
+	// Проверяем, что карта работает с дефолтными значениями
+	err := cMap.Set("key", "value")
+	if err != nil {
+		t.Error("Set should work with default TTL values")
+	}
+
+	// Проверяем, что значение установлено
+	if val, exists := cMap.Get("key"); !exists || val != "value" {
+		t.Error("Value should be retrievable after Set with default TTL")
+	}
+}
+
+func TestConcurrentMapWithTTL_Stress(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping stress test in short mode")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cMap := NewConcurrentMapWithTTL[string](ctx, 100*time.Millisecond, 20*time.Millisecond)
+
+	const (
+		numGoroutines = 20
+		numOperations = 1000
+	)
+
+	var wg sync.WaitGroup
+	wg.Add(numGoroutines * 3) // writers, readers, deleters
+
+	// Writers
+	for i := 0; i < numGoroutines; i++ {
+		go func(id int) {
+			defer wg.Done()
+			for j := 0; j < numOperations; j++ {
+				key := fmt.Sprintf("key-%d-%d", id, j)
+				_ = cMap.Set(key, "value")
+				time.Sleep(time.Microsecond) // Небольшая задержка для создания "реальных" условий
+			}
+		}(i)
+	}
+
+	// Readers
+	for i := 0; i < numGoroutines; i++ {
+		go func(id int) {
+			defer wg.Done()
+			for j := 0; j < numOperations; j++ {
+				key := fmt.Sprintf("key-%d-%d", id, j)
+				_, _ = cMap.Get(key)
+				time.Sleep(time.Microsecond)
+			}
+		}(i)
+	}
+
+	// Deleters
+	for i := 0; i < numGoroutines; i++ {
+		go func(id int) {
+			defer wg.Done()
+			for j := 0; j < numOperations; j++ {
+				key := fmt.Sprintf("key-%d-%d", id, j)
+				cMap.Delete(key)
+				time.Sleep(time.Microsecond)
+			}
+		}(i)
+	}
+
+	wg.Wait()
+}
+
+func TestConcurrentMapWithTTL_TTLReset(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	ttl := 200 * time.Millisecond
+	cMap := NewConcurrentMapWithTTL[string](ctx, ttl, 50*time.Millisecond)
+
+	// Устанавливаем начальное значение
+	cMap.Set("key", "initial")
+
+	// Ждем почти до истечения TTL
+	time.Sleep(ttl - 50*time.Millisecond)
+
+	// Обновляем значение
+	cMap.Set("key", "updated")
+
+	// Ждем больше половины TTL
+	time.Sleep(ttl/2 + 10*time.Millisecond)
+
+	// Значение должно все еще существовать
+	if val, exists := cMap.Get("key"); !exists || val != "updated" {
+		t.Error("Value should exist with updated content after TTL reset")
+	}
+
+	// Ждем до полного истечения нового TTL с дополнительным запасом
+	time.Sleep(ttl + 100*time.Millisecond)
+
+	// Проверяем несколько раз с небольшими интервалами
+	for i := 0; i < 3; i++ {
+		if _, exists := cMap.Get("key"); exists {
+			time.Sleep(50 * time.Millisecond)
+			continue
+		}
+		// Если значение удалено, тест пройден
+		return
+	}
+	t.Error("Value should be removed after full TTL period")
+}
