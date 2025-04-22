@@ -186,3 +186,183 @@ func TestMapNode_UpdateRemoveCallback(t *testing.T) {
 	assert.False(t, called1, "first callback should not be called")
 	assert.True(t, called2, "second callback should be called")
 }
+
+func TestMapNode_SetData(t *testing.T) {
+	testCases := []struct {
+		name        string
+		initialData interface{}
+		newData     interface{}
+	}{
+		{"update integer", 42, 84},
+		{"update string", "hello", "world"},
+		{"update to same value", 42, 42},
+		{"update struct",
+			struct{ value int }{42},
+			struct{ value int }{84}},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			node := NewMapNode(tc.initialData).(*MapNode[interface{}])
+			assert.Equal(t, tc.initialData, node.data, "initial data should match")
+
+			node.SetData(tc.newData)
+			assert.Equal(t, tc.newData, node.data, "data should be updated")
+		})
+	}
+}
+
+func TestMapNode_SetDataWithTTL(t *testing.T) {
+	node := NewMapNode[int](42).(*MapNode[int])
+	node.SetTTL(5 * time.Second)
+
+	// Проверяем, что SetData не влияет на TTL и duration
+	initialTTL := node.ttl
+	initialDuration := node.duration
+
+	node.SetData(84)
+
+	assert.Equal(t, 84, node.data, "data should be updated")
+	assert.Equal(t, initialTTL, node.ttl, "TTL should remain unchanged")
+	assert.Equal(t, initialDuration, node.duration, "duration should remain unchanged")
+}
+
+func TestMapNode_ReferenceTypes(t *testing.T) {
+	type TestStruct struct {
+		Value int
+		Data  string
+	}
+
+	testCases := []struct {
+		name string
+		test func(t *testing.T)
+	}{
+		{
+			name: "pointer to struct",
+			test: func(t *testing.T) {
+				initial := &TestStruct{Value: 42, Data: "initial"}
+				node := NewMapNode(initial).(*MapNode[*TestStruct])
+
+				// Проверяем, что изменение исходной структуры не влияет на данные в узле
+				initial.Value = 100
+				nodeData := node.GetData()
+				assert.Equal(t, 100, nodeData.Value, "node should reference the same memory")
+
+				// Проверяем установку нового указателя
+				newData := &TestStruct{Value: 200, Data: "new"}
+				node.SetData(newData)
+				assert.Equal(t, newData, node.GetData(), "node should store new pointer")
+			},
+		},
+		{
+			name: "slice",
+			test: func(t *testing.T) {
+				initial := []int{1, 2, 3}
+				node := NewMapNode(initial).(*MapNode[[]int])
+
+				// Проверяем, что изменение исходного слайса не влияет на данные в узле
+				initial[0] = 10
+				nodeData := node.GetData()
+				assert.Equal(t, 10, nodeData[0], "node should reference the same slice")
+
+				// Проверяем установку нового слайса
+				newData := []int{4, 5, 6}
+				node.SetData(newData)
+				assert.Equal(t, newData, node.GetData(), "node should store new slice")
+			},
+		},
+		{
+			name: "map",
+			test: func(t *testing.T) {
+				initial := map[string]int{"a": 1, "b": 2}
+				node := NewMapNode(initial).(*MapNode[map[string]int])
+
+				// Проверяем, что изменение исходной мапы не влияет на данные в узле
+				initial["a"] = 10
+				nodeData := node.GetData()
+				assert.Equal(t, 10, nodeData["a"], "node should reference the same map")
+
+				// Проверяем установку новой мапы
+				newData := map[string]int{"c": 3, "d": 4}
+				node.SetData(newData)
+				assert.Equal(t, newData, node.GetData(), "node should store new map")
+			},
+		},
+		{
+			name: "nested references",
+			test: func(t *testing.T) {
+				type NestedStruct struct {
+					Ptr   *TestStruct
+					Slice []int
+					Map   map[string]int
+				}
+
+				initial := &NestedStruct{
+					Ptr:   &TestStruct{Value: 42, Data: "test"},
+					Slice: []int{1, 2, 3},
+					Map:   map[string]int{"a": 1},
+				}
+
+				node := NewMapNode(initial).(*MapNode[*NestedStruct])
+
+				// Проверяем, что изменения в глубоко вложенных структурах отражаются
+				initial.Ptr.Value = 100
+				initial.Slice[0] = 10
+				initial.Map["a"] = 10
+
+				nodeData := node.GetData()
+				assert.Equal(t, 100, nodeData.Ptr.Value, "nested pointer should be modified")
+				assert.Equal(t, 10, nodeData.Slice[0], "nested slice should be modified")
+				assert.Equal(t, 10, nodeData.Map["a"], "nested map should be modified")
+
+				// Проверяем установку новой структуры
+				newData := &NestedStruct{
+					Ptr:   &TestStruct{Value: 200, Data: "new"},
+					Slice: []int{4, 5, 6},
+					Map:   map[string]int{"b": 2},
+				}
+				node.SetData(newData)
+				assert.Equal(t, newData, node.GetData(), "node should store new nested structure")
+			},
+		},
+		{
+			name: "nil values",
+			test: func(t *testing.T) {
+				var initial *TestStruct = nil
+				node := NewMapNode(initial).(*MapNode[*TestStruct])
+
+				assert.Nil(t, node.GetData(), "node should store nil pointer")
+
+				newData := &TestStruct{Value: 42, Data: "new"}
+				node.SetData(newData)
+				assert.NotNil(t, node.GetData(), "node should store non-nil pointer")
+
+				node.SetData(nil)
+				assert.Nil(t, node.GetData(), "node should store nil after reset")
+			},
+		},
+		{
+			name: "interface values",
+			test: func(t *testing.T) {
+				var initial interface{} = &TestStruct{Value: 42, Data: "test"}
+				node := NewMapNode(initial).(*MapNode[interface{}])
+
+				// Проверяем, что мы можем получить исходный тип через приведение типов
+				if ptr, ok := node.GetData().(*TestStruct); ok {
+					assert.Equal(t, 42, ptr.Value, "should preserve original value")
+				} else {
+					t.Error("failed to cast interface to original type")
+				}
+
+				// Проверяем установку значения другого типа через интерфейс
+				newData := "string value"
+				node.SetData(newData)
+				assert.Equal(t, newData, node.GetData(), "should store new value of different type")
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, tc.test)
+	}
+}

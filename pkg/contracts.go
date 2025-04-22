@@ -11,4 +11,5 @@ type ICache[T any] interface {
 	Len() int
 	Range(func(key string, value T) bool) error
 	SetTTL(ttl time.Duration)
+	SetTTLDecrement(ttlDecrement time.Duration)
 }

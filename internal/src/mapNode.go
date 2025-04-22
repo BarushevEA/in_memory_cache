@@ -47,3 +47,8 @@ func (node *MapNode[T]) GetData() T {
 	node.duration = node.ttl
 	return node.data
 }
+
+// SetData sets the data for the MapNode instance.
+func (node *MapNode[T]) SetData(data T) {
+	node.data = data
+}
