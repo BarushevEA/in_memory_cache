@@ -3,6 +3,8 @@ package src
 import (
 	"context"
 	"fmt"
+	"math/rand/v2"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -633,4 +635,352 @@ func TestConcurrentMapWithTTL_TickCollection(t *testing.T) {
 	if _, exists := cMap.Get("key2"); exists {
 		t.Error("Second value should be removed after TTL expiration")
 	}
+}
+
+func BenchmarkConcurrentMapWithTTL_SetGet(b *testing.B) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cMap := NewConcurrentMapWithTTL[string](ctx, time.Second, 100*time.Millisecond)
+
+	b.RunParallel(func(pb *testing.PB) {
+		i := 0
+		for pb.Next() {
+			key := fmt.Sprintf("key-%d", i)
+			err := cMap.Set(key, "value")
+			if err != nil {
+				b.Fatal(err)
+			}
+			_, _ = cMap.Get(key)
+			i++
+		}
+	})
+}
+
+func BenchmarkConcurrentMapWithTTL_Range(b *testing.B) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cMap := NewConcurrentMapWithTTL[string](ctx, time.Second, 100*time.Millisecond)
+
+	// Предварительное заполнение данными
+	for i := 0; i < 1000; i++ {
+		cMap.Set(fmt.Sprintf("key-%d", i), "value")
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		cMap.Range(func(key string, value string) bool {
+			return true
+		})
+	}
+}
+
+func TestConcurrentMapWithTTL_MemoryLeak(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping memory leak test in short mode")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cMap := NewConcurrentMapWithTTL[string](ctx, 100*time.Millisecond, 20*time.Millisecond)
+
+	// Добавляем первый элемент и ждем инициализации тикера
+	err := cMap.Set("init", "value")
+	if err != nil {
+		t.Fatal("Failed to initialize map")
+	}
+	time.Sleep(50 * time.Millisecond)
+
+	for i := 0; i < 100; i++ {
+		for j := 0; j < 1000; j++ {
+			key := fmt.Sprintf("key-%d-%d", i, j)
+			cMap.Set(key, "value")
+		}
+
+		// Увеличиваем время ожидания
+		time.Sleep(250 * time.Millisecond)
+
+		// Несколько попыток проверки
+		for attempt := 0; attempt < 3; attempt++ {
+			if l := cMap.Len(); l > 0 {
+				time.Sleep(50 * time.Millisecond)
+				continue
+			}
+			break
+		}
+
+		if l := cMap.Len(); l > 0 {
+			t.Errorf("Iteration %d: Expected map to be empty, got %d items", i, l)
+		}
+
+		runtime.GC()
+	}
+}
+
+func TestConcurrentMapWithTTL_RaceCondition(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cMap := NewConcurrentMapWithTTL[string](ctx, 200*time.Millisecond, 50*time.Millisecond)
+
+	var wg sync.WaitGroup
+	operations := 1000
+	goroutines := 10
+
+	wg.Add(goroutines * 4) // для Set, Get, Delete и Range операций
+
+	// Set operations
+	for i := 0; i < goroutines; i++ {
+		go func(id int) {
+			defer wg.Done()
+			for j := 0; j < operations; j++ {
+				key := fmt.Sprintf("key-%d-%d", id, j)
+				cMap.Set(key, "value")
+			}
+		}(i)
+	}
+
+	// Get operations
+	for i := 0; i < goroutines; i++ {
+		go func(id int) {
+			defer wg.Done()
+			for j := 0; j < operations; j++ {
+				key := fmt.Sprintf("key-%d-%d", id, j)
+				cMap.Get(key)
+			}
+		}(i)
+	}
+
+	// Delete operations
+	for i := 0; i < goroutines; i++ {
+		go func(id int) {
+			defer wg.Done()
+			for j := 0; j < operations; j++ {
+				key := fmt.Sprintf("key-%d-%d", id, j)
+				cMap.Delete(key)
+			}
+		}(i)
+	}
+
+	// Range operations
+	for i := 0; i < goroutines; i++ {
+		go func() {
+			defer wg.Done()
+			for j := 0; j < operations/10; j++ { // Меньше Range операций, так как они тяжелее
+				cMap.Range(func(key string, value string) bool {
+					return true
+				})
+			}
+		}()
+	}
+
+	wg.Wait()
+}
+
+func TestConcurrentMapWithTTL_UpdateMemoryLeak(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping update memory leak test in short mode")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cMap := NewConcurrentMapWithTTL[string](ctx, 100*time.Millisecond, 20*time.Millisecond)
+
+	// Инициализация тикера
+	err := cMap.Set("init", "value")
+	if err != nil {
+		t.Fatal("Failed to initialize map")
+	}
+	time.Sleep(50 * time.Millisecond)
+
+	// Создаем фиксированный набор ключей
+	const keysCount = 1000
+	keys := make([]string, keysCount)
+	for i := 0; i < keysCount; i++ {
+		keys[i] = fmt.Sprintf("key-%d", i)
+	}
+
+	// Обновляем значения многократно
+	for i := 0; i < 100; i++ {
+		// Обновляем все ключи
+		for _, key := range keys {
+			cMap.Set(key, fmt.Sprintf("value-%d", i))
+		}
+
+		// Ждем истечения TTL
+		time.Sleep(250 * time.Millisecond)
+
+		// Проверяем очистку
+		for attempt := 0; attempt < 3; attempt++ {
+			if l := cMap.Len(); l > 0 {
+				time.Sleep(50 * time.Millisecond)
+				continue
+			}
+			break
+		}
+
+		if l := cMap.Len(); l > 0 {
+			t.Errorf("Iteration %d: Expected map to be empty after updates, got %d items", i, l)
+		}
+
+		runtime.GC()
+	}
+}
+
+func TestConcurrentMapWithTTL_ConcurrentUpdateDelete(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cMap := NewConcurrentMapWithTTL[string](ctx, 100*time.Millisecond, 20*time.Millisecond)
+
+	// Инициализация
+	err := cMap.Set("init", "value")
+	if err != nil {
+		t.Fatal("Failed to initialize map")
+	}
+	time.Sleep(50 * time.Millisecond)
+
+	const (
+		goroutines = 10
+		operations = 1000
+	)
+
+	var wg sync.WaitGroup
+	wg.Add(goroutines * 2) // для updaters и deleters
+
+	// Updaters
+	for i := 0; i < goroutines; i++ {
+		go func(id int) {
+			defer wg.Done()
+			for j := 0; j < operations; j++ {
+				key := fmt.Sprintf("key-%d", j%100) // Переиспользуем 100 ключей
+				cMap.Set(key, fmt.Sprintf("value-%d-%d", id, j))
+				time.Sleep(time.Millisecond) // Небольшая задержка
+			}
+		}(i)
+	}
+
+	// Deleters
+	for i := 0; i < goroutines; i++ {
+		go func() {
+			defer wg.Done()
+			for j := 0; j < operations; j++ {
+				key := fmt.Sprintf("key-%d", j%100)
+				cMap.Delete(key)
+				time.Sleep(time.Millisecond) // Небольшая задержка
+			}
+		}()
+	}
+
+	// Дополнительная горутина для проверки размера
+	done := make(chan struct{})
+	go func() {
+		maxSize := 0
+		ticker := time.NewTicker(10 * time.Millisecond)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-done:
+				t.Logf("Maximum observed size: %d", maxSize)
+				return
+			case <-ticker.C:
+				if size := cMap.Len(); size > maxSize {
+					maxSize = size
+				}
+			}
+		}
+	}()
+
+	wg.Wait()
+	close(done)
+
+	// Финальная проверка
+	time.Sleep(250 * time.Millisecond)
+	if size := cMap.Len(); size > 0 {
+		t.Errorf("Expected empty map after all operations, got %d items", size)
+	}
+}
+
+func BenchmarkConcurrentMapWithTTL_HighLoad(b *testing.B) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cMap := NewConcurrentMapWithTTL[string](ctx, 100*time.Millisecond, 20*time.Millisecond)
+
+	// Предварительное заполнение
+	for i := 0; i < 1000; i++ {
+		cMap.Set(fmt.Sprintf("init-key-%d", i), "value")
+	}
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		// Каждая горутина работает со своим диапазоном ключей
+		localID := rand.Int()
+		counter := 0
+
+		for pb.Next() {
+			key := fmt.Sprintf("key-%d-%d", localID, counter%100)
+			switch counter % 3 {
+			case 0:
+				// Set operation
+				cMap.Set(key, "new-value")
+			case 1:
+				// Get operation
+				cMap.Get(key)
+			case 2:
+				// Delete operation
+				cMap.Delete(key)
+			}
+			counter++
+		}
+	})
+}
+
+func BenchmarkConcurrentMapWithTTL_Operations(b *testing.B) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cMap := NewConcurrentMapWithTTL[string](ctx, 100*time.Millisecond, 20*time.Millisecond)
+
+	// Предварительное заполнение для операций Get/Delete
+	for i := 0; i < 1000; i++ {
+		cMap.Set(fmt.Sprintf("init-key-%d", i), "value")
+	}
+
+	b.ResetTimer()
+
+	b.Run("Set", func(b *testing.B) {
+		b.RunParallel(func(pb *testing.PB) {
+			id := rand.Int()
+			i := 0
+			for pb.Next() {
+				cMap.Set(fmt.Sprintf("set-key-%d-%d", id, i), "value")
+				i++
+			}
+		})
+	})
+
+	b.Run("Get", func(b *testing.B) {
+		b.RunParallel(func(pb *testing.PB) {
+			i := 0
+			for pb.Next() {
+				cMap.Get(fmt.Sprintf("init-key-%d", i%1000))
+				i++
+			}
+		})
+	})
+
+	b.Run("Delete", func(b *testing.B) {
+		b.RunParallel(func(pb *testing.PB) {
+			i := 0
+			for pb.Next() {
+				cMap.Delete(fmt.Sprintf("init-key-%d", i%1000))
+				i++
+			}
+		})
+	})
 }
