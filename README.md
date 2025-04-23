@@ -75,6 +75,26 @@ Optimized for:
 cache := NewDynamicShardedMapWithTTL[string](ctx, ttl, cleanupInterval)
 ```
 
+Dynamic Sharding Process:
+
+Initial State:
+[Empty Map]
+
+After First Writes:
+[Shard 1] --> Data
+[Shard 2] --> Data
+
+Under Heavy Load:
+[Shard 1] --> Data
+[Shard 2] --> Data
+[Shard 3] --> Data
+[Shard 4] --> Data
+...
+
+After Data Cleanup:
+[Shard 1] --> Data
+[Shard 2] --> Data
+(empty shards automatically removed)
 
 ## Performance Comparison
 
