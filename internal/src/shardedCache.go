@@ -149,5 +149,33 @@ func (shardedMap *DynamicShardedMapWithTTL[T]) Range(callback func(key string, v
 }
 
 func (shardedMap *DynamicShardedMapWithTTL[T]) tickCollection() {
+	if shardedMap.isClosed {
+		return
+	}
 
+	ticker := time.NewTicker(shardedMap.ttlDecrement)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-shardedMap.ctx.Done():
+			shardedMap.Clear()
+		}
+
+		select {
+		case <-ticker.C:
+			if shardedMap.isClosed {
+				return
+			}
+
+			shardedMap.Lock()
+			for key, shard := range shardedMap.shards {
+				if shard.Len() == 0 {
+					shard.Clear()
+					delete(shardedMap.shards, key)
+				}
+			}
+			shardedMap.Unlock()
+		}
+	}
 }
