@@ -637,45 +637,6 @@ func TestConcurrentMapWithTTL_TickCollection(t *testing.T) {
 	}
 }
 
-func BenchmarkConcurrentMapWithTTL_SetGet(b *testing.B) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	cMap := NewConcurrentMapWithTTL[string](ctx, time.Second, 100*time.Millisecond)
-
-	b.RunParallel(func(pb *testing.PB) {
-		i := 0
-		for pb.Next() {
-			key := fmt.Sprintf("key-%d", i)
-			err := cMap.Set(key, "value")
-			if err != nil {
-				b.Fatal(err)
-			}
-			_, _ = cMap.Get(key)
-			i++
-		}
-	})
-}
-
-func BenchmarkConcurrentMapWithTTL_Range(b *testing.B) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	cMap := NewConcurrentMapWithTTL[string](ctx, time.Second, 100*time.Millisecond)
-
-	// Предварительное заполнение данными
-	for i := 0; i < 1000; i++ {
-		cMap.Set(fmt.Sprintf("key-%d", i), "value")
-	}
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		cMap.Range(func(key string, value string) bool {
-			return true
-		})
-	}
-}
-
 func TestConcurrentMapWithTTL_MemoryLeak(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping memory leak test in short mode")
@@ -905,6 +866,26 @@ func TestConcurrentMapWithTTL_ConcurrentUpdateDelete(t *testing.T) {
 	}
 }
 
+func BenchmarkConcurrentMapWithTTL_SetGet(b *testing.B) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cMap := NewConcurrentMapWithTTL[string](ctx, time.Second, 100*time.Millisecond)
+
+	b.RunParallel(func(pb *testing.PB) {
+		i := 0
+		for pb.Next() {
+			key := fmt.Sprintf("key-%d", i)
+			err := cMap.Set(key, "value")
+			if err != nil {
+				b.Fatal(err)
+			}
+			_, _ = cMap.Get(key)
+			i++
+		}
+	})
+}
+
 func BenchmarkConcurrentMapWithTTL_HighLoad(b *testing.B) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -983,4 +964,23 @@ func BenchmarkConcurrentMapWithTTL_Operations(b *testing.B) {
 			}
 		})
 	})
+}
+
+func BenchmarkConcurrentMapWithTTL_Range(b *testing.B) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cMap := NewConcurrentMapWithTTL[string](ctx, time.Second, 100*time.Millisecond)
+
+	// Предварительное заполнение данными
+	for i := 0; i < 1000; i++ {
+		cMap.Set(fmt.Sprintf("key-%d", i), "value")
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		cMap.Range(func(key string, value string) bool {
+			return true
+		})
+	}
 }
