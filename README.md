@@ -145,13 +145,36 @@ cache := NewDynamicShardedMapWithTTL[string](ctx, 5_time.Minute, 1_time.Minute)
 // Iterate over all elements cache.Range(func(key string, value string) bool { // Process key-value pair return true })
 
 ```
-## Benchmarking Results
+## Benchmark Environment
 
-All benchmarks were performed on:
+### Test Environment Specifications
+- Virtual Machine Environment
+- CPU: AMD Ryzen 9 3950X (16 logical cores allocated)
 - OS: Linux
 - Architecture: amd64
-- CPU: AMD Ryzen 9 3950X 16-Core Processor
 
-Full benchmark results and methodology are available in the benchmark directory.
+### Important Notes
+⚠️ Performance metrics were obtained in a virtualized environment. Results on physical hardware may vary:
+- Higher performance potential on bare metal
+- Possibly better results with more available CPU cores
+- Different I/O and memory access patterns
+- Less overhead without virtualization layer
 
+### Scaling Expectations
+- Performance may scale better on systems with >16 cores
+- Bare metal deployments likely to show improved throughput
+- Memory access patterns could be more efficient
+- Lower latency in non-virtualized environments
+
+```go
+// Example of configuration considering environment
+cache := NewDynamicShardedMapWithTTL[string](
+    ctx,
+    ttl,
+    cleanupInterval,
+)
+
+// The cache will automatically adapt to available resources
+// No manual tuning needed for different environments
+```
 
