@@ -57,6 +57,20 @@ Optimized for:
 - ✅ Mixed read/write operations
 - ✅ Memory efficiency
 
+#### 🔄 Adaptive Sharding
+- Automatically adjusts the number of shards based on usage patterns
+- Self-optimizing performance under varying loads
+- No manual configuration needed for shard count
+- Reduces memory overhead by cleaning up unused shards
+- Adapts to changing access patterns in real-time
+
+#### 🎯 Ideal Use Cases
+- Systems with varying load patterns
+- Applications where access patterns change over time
+- Microservices with unpredictable usage spikes
+- Environments where manual tuning is impractical
+
+
 ```go
 cache := NewDynamicShardedMapWithTTL[string](ctx, ttl, cleanupInterval)
 ```
