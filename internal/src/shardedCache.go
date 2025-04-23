@@ -72,28 +72,80 @@ func (shardedMap *DynamicShardedMapWithTTL[T]) Set(key string, value T) error {
 }
 
 func (shardedMap *DynamicShardedMapWithTTL[T]) Get(key string) (T, bool) {
-	//TODO implement me
-	panic("implement me")
+	if shardedMap.isClosed {
+		return *new(T), false
+	}
+
+	shardedMap.RLock()
+	defer shardedMap.RUnlock()
+	hash := utils.GetTopHash(key)
+	if shard, ok := shardedMap.shards[hash]; ok {
+		return shard.Get(key)
+	}
+
+	return *new(T), false
 }
 
 func (shardedMap *DynamicShardedMapWithTTL[T]) Delete(key string) {
-	//TODO implement me
-	panic("implement me")
+	if shardedMap.isClosed {
+		return
+	}
+
+	shardedMap.Lock()
+	defer shardedMap.Unlock()
+	hash := utils.GetTopHash(key)
+	if shard, ok := shardedMap.shards[hash]; ok {
+		shard.Delete(key)
+		if shard.Len() == 0 {
+			delete(shardedMap.shards, hash)
+		}
+	}
 }
 
 func (shardedMap *DynamicShardedMapWithTTL[T]) Clear() {
-	//TODO implement me
-	panic("implement me")
+	if shardedMap.isClosed {
+		return
+	}
+
+	shardedMap.isClosed = true
+
+	shardedMap.Lock()
+	defer shardedMap.Unlock()
+	for key, shard := range shardedMap.shards {
+		shard.Clear()
+		delete(shardedMap.shards, key)
+	}
+	shardedMap.shards = make(map[uint8]ICacheInMemory[T])
 }
 
 func (shardedMap *DynamicShardedMapWithTTL[T]) Len() int {
-	//TODO implement me
-	panic("implement me")
+	if shardedMap.isClosed {
+		return 0
+	}
+
+	shardedMap.RLock()
+	defer shardedMap.RUnlock()
+	var count int
+	for _, shard := range shardedMap.shards {
+		count += shard.Len()
+	}
+	return count
 }
 
-func (shardedMap *DynamicShardedMapWithTTL[T]) Range(f func(key string, value T) bool) error {
-	//TODO implement me
-	panic("implement me")
+func (shardedMap *DynamicShardedMapWithTTL[T]) Range(callback func(key string, value T) bool) error {
+	if shardedMap.isClosed {
+		return errors.New("DynamicShardedMapWithTTL.Range ERROR: cannot perform operation on closed cache")
+	}
+
+	shardedMap.RLock()
+	defer shardedMap.RUnlock()
+	for _, shard := range shardedMap.shards {
+		err := shard.Range(callback)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (shardedMap *DynamicShardedMapWithTTL[T]) tickCollection() {
