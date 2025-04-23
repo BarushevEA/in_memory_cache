@@ -3,6 +3,8 @@ package src
 import (
 	"context"
 	"errors"
+	"fmt"
+	"sync"
 	"testing"
 	"time"
 )
@@ -259,4 +261,116 @@ func TestDynamicShardedMapWithTTL_TTLExpiration(t *testing.T) {
 	}
 
 	t.Errorf("Value should be removed after TTL expiration")
+}
+
+func TestDynamicShardedMapWithTTL_ConcurrentAccess(t *testing.T) {
+	ctx := context.Background()
+	cache := NewDynamicShardedMapWithTTL[string](ctx, 10*time.Second, 2*time.Second)
+
+	const goroutines = 10
+	const operationsPerGoroutine = 100
+
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+
+	for i := 0; i < goroutines; i++ {
+		go func(id int) {
+			defer wg.Done()
+			for j := 0; j < operationsPerGoroutine; j++ {
+				key := fmt.Sprintf("key_%d_%d", id, j)
+				// Тестируем Set
+				err := cache.Set(key, "value")
+				if err != nil {
+					t.Errorf("Set failed: %v", err)
+				}
+
+				// Тестируем Get
+				if _, ok := cache.Get(key); !ok {
+					t.Errorf("Get failed for key: %s", key)
+				}
+
+				// Тестируем Delete
+				cache.Delete(key)
+			}
+		}(i)
+	}
+
+	wg.Wait()
+}
+
+func TestDynamicShardedMapWithTTL_ContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cache := NewDynamicShardedMapWithTTL[string](ctx, 10*time.Second, 2*time.Second)
+
+	// Добавляем данные
+	_ = cache.Set("key1", "value1")
+	_ = cache.Set("key2", "value2")
+
+	// Отменяем контекст
+	cancel()
+
+	// Даём время на обработку отмены
+	time.Sleep(100 * time.Millisecond)
+
+	// Проверяем что кэш очищен
+	if cache.Len() != 0 {
+		t.Errorf("Cache should be empty after context cancellation")
+	}
+
+	// Проверяем что нельзя добавить новые данные
+	err := cache.Set("key3", "value3")
+	if err == nil {
+		t.Error("Should not be able to set values after context cancellation")
+	}
+}
+
+func TestDynamicShardedMapWithTTL_EmptyKeysAndValues(t *testing.T) {
+	ctx := context.Background()
+	cache := NewDynamicShardedMapWithTTL[string](ctx, 10*time.Second, 2*time.Second)
+
+	// Тест пустого ключа
+	err := cache.Set("", "value")
+	if err != nil {
+		t.Errorf("Setting empty key should be allowed: %v", err)
+	}
+
+	// Тест пустого значения
+	err = cache.Set("key", "")
+	if err != nil {
+		t.Errorf("Setting empty value should be allowed: %v", err)
+	}
+
+	// Проверка получения значений
+	if val, ok := cache.Get(""); !ok {
+		t.Error("Should be able to get value for empty key")
+	} else if val != "value" {
+		t.Errorf("Got wrong value for empty key: %s", val)
+	}
+}
+
+func TestDynamicShardedMapWithTTL_MultipleShards(t *testing.T) {
+	ctx := context.Background()
+	cache := NewDynamicShardedMapWithTTL[string](ctx, 10*time.Second, 2*time.Second)
+
+	// Добавляем много ключей для создания множества шардов
+	keys := []string{
+		"a1", "b1", "c1", "d1", "e1",
+		"a2", "b2", "c2", "d2", "e2",
+	}
+
+	for _, key := range keys {
+		err := cache.Set(key, "value-"+key)
+		if err != nil {
+			t.Errorf("Failed to set key %s: %v", key, err)
+		}
+	}
+
+	// Проверяем что все значения доступны
+	for _, key := range keys {
+		if val, ok := cache.Get(key); !ok {
+			t.Errorf("Failed to get key %s", key)
+		} else if val != "value-"+key {
+			t.Errorf("Wrong value for key %s: got %s, want %s", key, val, "value-"+key)
+		}
+	}
 }
