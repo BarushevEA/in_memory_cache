@@ -144,3 +144,119 @@ func TestDynamicShardedMapWithTTL_TickCollection(t *testing.T) {
 		t.Errorf("tickCollection() did not clear expired items")
 	}
 }
+
+func TestNewDynamicShardedMapWithTTL_InvalidParams(t *testing.T) {
+	ctx := context.Background()
+	tests := []struct {
+		name string
+		ttl  time.Duration
+		decr time.Duration
+	}{
+		{"negative ttl", -1 * time.Second, 1 * time.Second},
+		{"zero ttl", 0, 1 * time.Second},
+		{"negative decrement", 5 * time.Second, -1 * time.Second},
+		{"zero decrement", 5 * time.Second, 0},
+		{"decrement larger than ttl", 5 * time.Second, 6 * time.Second},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cache := NewDynamicShardedMapWithTTL[string](ctx, tt.ttl, tt.decr)
+			// Проверяем, что кэш создался с дефолтными значениями
+			err := cache.Set("test", "value")
+			if err != nil {
+				t.Errorf("Set() on cache with invalid params failed: %v", err)
+			}
+		})
+	}
+}
+
+func TestDynamicShardedMapWithTTL_RangeWithBreak(t *testing.T) {
+	ctx := context.Background()
+	cache := NewDynamicShardedMapWithTTL[string](ctx, 10*time.Second, 2*time.Second)
+
+	// Заполняем кэш
+	_ = cache.Set("key1", "value1")
+	_ = cache.Set("key2", "value2")
+	_ = cache.Set("key3", "value3")
+
+	var count int
+	err := cache.Range(func(k string, v string) bool {
+		count++
+		return false // прерываем сразу после первого элемента
+	})
+
+	if err != nil {
+		t.Errorf("Range() returned an error: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("Range() with break iterated over %d items, want %d", count, 1)
+	}
+}
+
+func TestDynamicShardedMapWithTTL_RangeOnClosedCache(t *testing.T) {
+	ctx := context.Background()
+	cache := NewDynamicShardedMapWithTTL[string](ctx, 10*time.Second, 2*time.Second)
+	_ = cache.Set("key1", "value1")
+
+	cache.Clear() // закрываем кэш
+
+	err := cache.Range(func(k string, v string) bool {
+		return true
+	})
+
+	if err == nil {
+		t.Error("Range() on closed cache should return error")
+	}
+}
+
+func TestDynamicShardedMapWithTTL_GetOnClosedCache(t *testing.T) {
+	ctx := context.Background()
+	cache := NewDynamicShardedMapWithTTL[string](ctx, 10*time.Second, 2*time.Second)
+	_ = cache.Set("key1", "value1")
+
+	cache.Clear() // закрываем кэш
+
+	value, ok := cache.Get("key1")
+	if ok || value != "" {
+		t.Errorf("Get() on closed cache should return zero value and false, got %v, %v", value, ok)
+	}
+}
+
+func TestDynamicShardedMapWithTTL_TTLExpiration(t *testing.T) {
+	ctx := context.Background()
+	ttl := 2 * time.Second
+	cache := NewDynamicShardedMapWithTTL[string](ctx, ttl, 1*time.Second)
+
+	// Устанавливаем значение
+	_ = cache.Set("key1", "value1")
+
+	// Проверяем что значение есть
+	if val, ok := cache.Get("key1"); !ok || val != "value1" {
+		t.Errorf("Value should be available immediately after set")
+	}
+
+	// Ждем половину TTL
+	time.Sleep(ttl / 2)
+
+	// Значение все еще должно быть доступно
+	if val, ok := cache.Get("key1"); !ok || val != "value1" {
+		t.Errorf("Value should be available before TTL expires")
+	}
+
+	// Ждем чуть больше TTL для надежности
+	timer := time.NewTimer(ttl + 500*time.Millisecond)
+	<-timer.C
+
+	// Делаем несколько попыток проверки с небольшими интервалами
+	maxAttempts := 5
+	for i := 0; i < maxAttempts; i++ {
+		if _, ok := cache.Get("key1"); !ok {
+			// Успешно - значение удалено
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	t.Errorf("Value should be removed after TTL expiration")
+}
