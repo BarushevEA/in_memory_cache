@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"sync"
 	"testing"
 	"time"
@@ -372,5 +373,120 @@ func TestDynamicShardedMapWithTTL_MultipleShards(t *testing.T) {
 		} else if val != "value-"+key {
 			t.Errorf("Wrong value for key %s: got %s, want %s", key, val, "value-"+key)
 		}
+	}
+}
+
+func BenchmarkDynamicShardedMapWithTTL_SetGet(b *testing.B) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cache := NewDynamicShardedMapWithTTL[string](ctx, time.Second, 100*time.Millisecond)
+
+	b.RunParallel(func(pb *testing.PB) {
+		i := 0
+		for pb.Next() {
+			key := fmt.Sprintf("key-%d", i)
+			err := cache.Set(key, "value")
+			if err != nil {
+				b.Fatal(err)
+			}
+			_, _ = cache.Get(key)
+			i++
+		}
+	})
+}
+
+func BenchmarkDynamicShardedMapWithTTL_HighLoad(b *testing.B) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cache := NewDynamicShardedMapWithTTL[string](ctx, 100*time.Millisecond, 20*time.Millisecond)
+
+	// Предварительное заполнение
+	for i := 0; i < 1000; i++ {
+		cache.Set(fmt.Sprintf("init-key-%d", i), "value")
+	}
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		localID := rand.Int()
+		counter := 0
+
+		for pb.Next() {
+			key := fmt.Sprintf("key-%d-%d", localID, counter%100)
+			switch counter % 3 {
+			case 0:
+				cache.Set(key, "new-value")
+			case 1:
+				cache.Get(key)
+			case 2:
+				cache.Delete(key)
+			}
+			counter++
+		}
+	})
+}
+
+func BenchmarkDynamicShardedMapWithTTL_Operations(b *testing.B) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cache := NewDynamicShardedMapWithTTL[string](ctx, 100*time.Millisecond, 20*time.Millisecond)
+
+	// Предварительное заполнение для операций Get/Delete
+	for i := 0; i < 1000; i++ {
+		cache.Set(fmt.Sprintf("init-key-%d", i), "value")
+	}
+
+	b.ResetTimer()
+
+	b.Run("Set", func(b *testing.B) {
+		b.RunParallel(func(pb *testing.PB) {
+			id := rand.Int()
+			i := 0
+			for pb.Next() {
+				cache.Set(fmt.Sprintf("set-key-%d-%d", id, i), "value")
+				i++
+			}
+		})
+	})
+
+	b.Run("Get", func(b *testing.B) {
+		b.RunParallel(func(pb *testing.PB) {
+			i := 0
+			for pb.Next() {
+				cache.Get(fmt.Sprintf("init-key-%d", i%1000))
+				i++
+			}
+		})
+	})
+
+	b.Run("Delete", func(b *testing.B) {
+		b.RunParallel(func(pb *testing.PB) {
+			i := 0
+			for pb.Next() {
+				cache.Delete(fmt.Sprintf("init-key-%d", i%1000))
+				i++
+			}
+		})
+	})
+}
+
+func BenchmarkDynamicShardedMapWithTTL_Range(b *testing.B) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cache := NewDynamicShardedMapWithTTL[string](ctx, time.Second, 100*time.Millisecond)
+
+	// Предварительное заполнение данными
+	for i := 0; i < 1000; i++ {
+		cache.Set(fmt.Sprintf("key-%d", i), "value")
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		cache.Range(func(key string, value string) bool {
+			return true
+		})
 	}
 }
