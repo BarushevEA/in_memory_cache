@@ -24,13 +24,12 @@ func NewConcurrentMapWithTTL[T any](ctx context.Context, ttl, ttlDecrement time.
 	cMap := &ConcurrentMapWithTTL[T]{}
 	cMap.data = make(map[string]IMapNode[T])
 	cMap.ctx, cMap.cancel = context.WithCancel(ctx)
+	cMap.ttl = ttl
+	cMap.ttlDecrement = ttlDecrement
 
 	if ttl <= 0 || ttlDecrement <= 0 || ttlDecrement > ttl {
 		cMap.ttl = 5 * time.Second
 		cMap.ttlDecrement = 1 * time.Second
-	} else {
-		cMap.ttl = ttl
-		cMap.ttlDecrement = ttlDecrement
 	}
 
 	return cMap
