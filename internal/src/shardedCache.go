@@ -2,6 +2,8 @@ package src
 
 import (
 	"context"
+	"errors"
+	"github.com/BarushevEA/in_memory_cache/internal/utils"
 	"sync"
 	"time"
 )
@@ -35,32 +37,65 @@ func NewDynamicShardedMapWithTTL[T any](ctx context.Context, cacheInMemoryTtl ti
 	return shardedMap
 }
 
-func (d DynamicShardedMapWithTTL[T]) Set(key string, value T) error {
+func (shardedMap *DynamicShardedMapWithTTL[T]) Set(key string, value T) error {
+	if shardedMap.isClosed {
+		return errors.New("DynamicShardedMapWithTTL.Set ERROR: cannot perform operation on closed cache")
+	}
+
+	defer func() {
+		shardedMap.tickerOnce.Do(func() {
+			go shardedMap.tickCollection()
+		})
+	}()
+
+	shardedMap.Lock()
+	defer shardedMap.Unlock()
+	hash := utils.GetTopHash(key)
+	if shard, ok := shardedMap.shards[hash]; ok {
+		err := shard.Set(key, value)
+		if err != nil {
+			return err
+		}
+	} else {
+		newShard := NewConcurrentMapWithTTL[T](
+			shardedMap.ctx,
+			shardedMap.cacheInMemoryTtl,
+			shardedMap.cacheInMemoryTtlDecrement)
+		err := newShard.Set(key, value)
+		if err != nil {
+			return err
+		}
+		shardedMap.shards[hash] = newShard
+	}
+
+	return nil
+}
+
+func (shardedMap *DynamicShardedMapWithTTL[T]) Get(key string) (T, bool) {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (d DynamicShardedMapWithTTL[T]) Get(key string) (T, bool) {
+func (shardedMap *DynamicShardedMapWithTTL[T]) Delete(key string) {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (d DynamicShardedMapWithTTL[T]) Delete(key string) {
+func (shardedMap *DynamicShardedMapWithTTL[T]) Clear() {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (d DynamicShardedMapWithTTL[T]) Clear() {
+func (shardedMap *DynamicShardedMapWithTTL[T]) Len() int {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (d DynamicShardedMapWithTTL[T]) Len() int {
+func (shardedMap *DynamicShardedMapWithTTL[T]) Range(f func(key string, value T) bool) error {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (d DynamicShardedMapWithTTL[T]) Range(f func(key string, value T) bool) error {
-	//TODO implement me
-	panic("implement me")
+func (shardedMap *DynamicShardedMapWithTTL[T]) tickCollection() {
+
 }

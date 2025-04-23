@@ -1,9 +1,9 @@
 package utils
 
-// getTopHash calculates and returns the top 8 bits of a hash value for the given key string.
+// GetTopHash calculates and returns the top 8 bits of a hash value for the given key string.
 // For keys shorter than or equal to 32 characters, a multiplicative hashing strategy is used.
 // For longer keys, an additive hashing strategy with bit-shifting is applied.
-func getTopHash(key string) uint8 {
+func GetTopHash(key string) uint8 {
 	if len(key) <= 32 {
 		var hash uint64
 		for i := 0; i < len(key); i++ {
