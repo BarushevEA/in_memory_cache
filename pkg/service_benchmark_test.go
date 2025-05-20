@@ -9,7 +9,6 @@ import (
 	"time"
 )
 
-// Тесты производительности (benchmarks)
 func BenchmarkCache(b *testing.B) {
 	ctx := context.Background()
 	caches := map[string]ICache[string]{
@@ -43,9 +42,6 @@ func BenchmarkCache(b *testing.B) {
 	}
 }
 
-// Добавьте эти тесты в конец файла service_test.go
-
-// Тест на большие объемы данных
 func BenchmarkCache_LargeDataSet(b *testing.B) {
 	ctx := context.Background()
 	caches := map[string]ICache[string]{
@@ -53,7 +49,6 @@ func BenchmarkCache_LargeDataSet(b *testing.B) {
 		"ShardedCache":    NewShardedCache[string](ctx, time.Second, time.Millisecond),
 	}
 
-	// Генерируем большой набор данных
 	const dataSize = 100_000
 	data := make(map[string]string, dataSize)
 	for i := 0; i < dataSize; i++ {
@@ -62,7 +57,6 @@ func BenchmarkCache_LargeDataSet(b *testing.B) {
 
 	for name, cache := range caches {
 		b.Run(name, func(b *testing.B) {
-			// Заполнение кеша
 			for k, v := range data {
 				if err := cache.Set(k, v); err != nil {
 					b.Fatal(err)
@@ -80,7 +74,6 @@ func BenchmarkCache_LargeDataSet(b *testing.B) {
 	}
 }
 
-// Тест на устойчивость к нагрузке
 func BenchmarkCache_StressTest(b *testing.B) {
 	ctx := context.Background()
 	caches := map[string]ICache[string]{
@@ -88,35 +81,44 @@ func BenchmarkCache_StressTest(b *testing.B) {
 		"ShardedCache":    NewShardedCache[string](ctx, time.Second, time.Millisecond),
 	}
 
+	const (
+		initialSize = 100000
+		keySpace    = 200000
+		getWeight   = 80
+		setWeight   = 15
+		delWeight   = 4
+		rangeWeight = 1
+	)
+
 	operations := []struct {
 		name     string
 		weight   int
 		function func(cache ICache[string], key string)
 	}{
 		{
-			name:   "Set",
-			weight: 25,
-			function: func(cache ICache[string], key string) {
-				_ = cache.Set(key, "value")
-			},
-		},
-		{
 			name:   "Get",
-			weight: 50,
+			weight: getWeight,
 			function: func(cache ICache[string], key string) {
 				_, _ = cache.Get(key)
 			},
 		},
 		{
+			name:   "Set",
+			weight: setWeight,
+			function: func(cache ICache[string], key string) {
+				_ = cache.Set(key, fmt.Sprintf("value-%s", key))
+			},
+		},
+		{
 			name:   "Delete",
-			weight: 15,
+			weight: delWeight,
 			function: func(cache ICache[string], key string) {
 				cache.Delete(key)
 			},
 		},
 		{
 			name:   "Range",
-			weight: 10,
+			weight: rangeWeight,
 			function: func(cache ICache[string], _ string) {
 				_ = cache.Range(func(k string, v string) bool {
 					return true
@@ -127,11 +129,16 @@ func BenchmarkCache_StressTest(b *testing.B) {
 
 	for name, cache := range caches {
 		b.Run(name, func(b *testing.B) {
+			for i := 0; i < initialSize; i++ {
+				_ = cache.Set(fmt.Sprintf("init-key-%d", i), fmt.Sprintf("init-value-%d", i))
+			}
+
+			b.ResetTimer()
 			b.RunParallel(func(pb *testing.PB) {
 				localRand := rand.NewPCG(uint64(time.Now().UnixNano()), uint64(time.Now().UnixNano()))
 
 				for pb.Next() {
-					key := fmt.Sprintf("key-%d", localRand.Uint64()%1000)
+					key := fmt.Sprintf("key-%d", localRand.Uint64()%uint64(keySpace))
 					opIndex := weightedRandomChoice(operations, localRand)
 					operations[opIndex].function(cache, key)
 				}
@@ -140,7 +147,6 @@ func BenchmarkCache_StressTest(b *testing.B) {
 	}
 }
 
-// weightedRandomChoice выбирает операцию с учетом её веса
 func weightedRandomChoice(operations []struct {
 	name     string
 	weight   int
@@ -161,7 +167,6 @@ func weightedRandomChoice(operations []struct {
 	return len(operations) - 1
 }
 
-// Тест на работу с разными типами данных
 func BenchmarkCache_DifferentTypes(b *testing.B) {
 	ctx := context.Background()
 
@@ -201,7 +206,6 @@ func BenchmarkCache_DifferentTypes(b *testing.B) {
 	})
 }
 
-// Тест на утечку памяти при длительной работе
 func BenchmarkCache_MemoryLeakLongRun(b *testing.B) {
 	ctx := context.Background()
 	cache := NewConcurrentCache[string](ctx, time.Millisecond*100, time.Millisecond*10)
@@ -226,14 +230,13 @@ func BenchmarkCache_MemoryLeakLongRun(b *testing.B) {
 	b.ReportMetric(float64(m2.NumGC-m1.NumGC), "GCs")
 }
 
-// Тест на восстановление после сбоев
 func BenchmarkCache_Recovery(b *testing.B) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cache := NewConcurrentCache[string](ctx, time.Second, time.Millisecond)
 
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			if rand.Float64() < 0.001 { // 0.1% шанс отмены контекста
+			if rand.Float64() < 0.001 {
 				cancel()
 				ctx, cancel = context.WithCancel(context.Background())
 				cache = NewConcurrentCache[string](ctx, time.Second, time.Millisecond)
@@ -245,4 +248,79 @@ func BenchmarkCache_Recovery(b *testing.B) {
 		}
 	})
 	cancel()
+}
+
+func BenchmarkCache_Operations(b *testing.B) {
+	ctx := context.Background()
+	dataSize := 100000
+
+	prefixes := []string{
+		"user:", "session:", "post:", "comment:",
+		"product:", "order:", "cache:", "token:",
+		"config:", "metric:", "log:", "event:",
+		"data:", "temp:", "queue:", "task:",
+	}
+
+	operations := []struct {
+		name string
+		op   func(cache ICache[string], r *rand.PCG, prefix string)
+	}{
+		{"Set", func(cache ICache[string], r *rand.PCG, prefix string) {
+			key := fmt.Sprintf("%s%x", prefix, r.Uint64())
+			cache.Set(key, "new-value")
+		}},
+		{"Get", func(cache ICache[string], r *rand.PCG, prefix string) {
+			key := fmt.Sprintf("%s%x", prefix, r.Uint64())
+			cache.Get(key)
+		}},
+		{"Delete", func(cache ICache[string], r *rand.PCG, prefix string) {
+			key := fmt.Sprintf("%s%x", prefix, r.Uint64())
+			cache.Delete(key)
+		}},
+		{"Range", func(cache ICache[string], _ *rand.PCG, _ string) {
+			cache.Range(func(k string, v string) bool {
+				return true
+			})
+		}},
+	}
+
+	for _, op := range operations {
+		b.Run("ConcurrentCache_"+op.name, func(b *testing.B) {
+			cache := NewConcurrentCache[string](ctx, time.Second, time.Millisecond)
+			r := rand.NewPCG(uint64(time.Now().UnixNano()), uint64(time.Now().UnixNano()))
+
+			for i := 0; i < dataSize; i++ {
+				prefix := prefixes[i%len(prefixes)]
+				cache.Set(fmt.Sprintf("%s%x", prefix, r.Uint64()), "value")
+			}
+
+			b.ResetTimer()
+			b.RunParallel(func(pb *testing.PB) {
+				localRand := rand.NewPCG(uint64(time.Now().UnixNano()), uint64(time.Now().UnixNano()))
+				prefix := prefixes[localRand.Uint64()%uint64(len(prefixes))]
+				for pb.Next() {
+					op.op(cache, localRand, prefix)
+				}
+			})
+		})
+
+		b.Run("ShardedCache_"+op.name, func(b *testing.B) {
+			cache := NewShardedCache[string](ctx, time.Second, time.Millisecond)
+			r := rand.NewPCG(uint64(time.Now().UnixNano()), uint64(time.Now().UnixNano()))
+
+			for i := 0; i < dataSize; i++ {
+				prefix := prefixes[i%len(prefixes)]
+				cache.Set(fmt.Sprintf("%s%x", prefix, r.Uint64()), "value")
+			}
+
+			b.ResetTimer()
+			b.RunParallel(func(pb *testing.PB) {
+				localRand := rand.NewPCG(uint64(time.Now().UnixNano()), uint64(time.Now().UnixNano()))
+				prefix := prefixes[localRand.Uint64()%uint64(len(prefixes))]
+				for pb.Next() {
+					op.op(cache, localRand, prefix)
+				}
+			})
+		})
+	}
 }

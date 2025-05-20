@@ -9,7 +9,6 @@ import (
 	"time"
 )
 
-// Тесты на некорректные входные данные
 func TestInvalidInputs(t *testing.T) {
 	testCases := []struct {
 		name    string
@@ -19,7 +18,7 @@ func TestInvalidInputs(t *testing.T) {
 		{
 			name: "Very long key",
 			test: func(t *testing.T, cache ICache[string]) {
-				key := make([]byte, 1<<16) // 64KB key
+				key := make([]byte, 1<<16)
 				err := cache.Set(string(key), "value")
 				if err != nil {
 					t.Errorf("Large key should be handled: %v", err)
@@ -68,19 +67,16 @@ func TestInvalidInputs(t *testing.T) {
 	}
 }
 
-// Тесты утечек памяти
 func TestMemoryLeaks(t *testing.T) {
 	ctx := context.Background()
 	cache := NewConcurrentCache[string](ctx, time.Millisecond*100, time.Millisecond*10)
 
-	// Принудительно вызываем сборку мусора перед тестом
 	runtime.GC()
-	time.Sleep(time.Millisecond * 100) // Даем время на завершение сборки мусора
+	time.Sleep(time.Millisecond * 100)
 
 	var m1, m2 runtime.MemStats
 	runtime.ReadMemStats(&m1)
 
-	// Выполняем операции в цикле
 	for i := 0; i < 1000; i++ {
 		key := fmt.Sprintf("key-%d", i)
 		err := cache.Set(key, "value")
@@ -91,32 +87,26 @@ func TestMemoryLeaks(t *testing.T) {
 		cache.Delete(key)
 	}
 
-	// Очищаем кеш
 	cache.Clear()
 
-	// Даем время на очистку и сборку мусора
 	time.Sleep(time.Millisecond * 200)
 	runtime.GC()
 	time.Sleep(time.Millisecond * 100)
 
 	runtime.ReadMemStats(&m2)
 
-	// Проверяем изменение различных показателей памяти
 	heapDiff := int64(m2.HeapAlloc - m1.HeapAlloc)
 	t.Logf("Heap allocation difference: %d bytes", heapDiff)
 
-	// Проверяем утечку по количеству объектов в куче
 	objectsDiff := int64(m2.HeapObjects - m1.HeapObjects)
 	t.Logf("Heap objects difference: %d", objectsDiff)
 
-	// Устанавливаем разумный порог для остаточной памяти (например, 1 МБ)
-	const maxAcceptableBytes = 1 * 1024 * 1024 // 1 MB
+	const maxAcceptableBytes = 1 * 1024 * 1024
 	if heapDiff > maxAcceptableBytes {
 		t.Errorf("Possible memory leak detected: heap grew by %d bytes (max acceptable: %d bytes)",
 			heapDiff, maxAcceptableBytes)
 	}
 
-	// Проверяем, что количество объектов в куче не выросло значительно
 	const maxAcceptableObjects = 1000
 	if objectsDiff > maxAcceptableObjects {
 		t.Errorf("Possible memory leak detected: heap objects grew by %d (max acceptable: %d)",
@@ -124,15 +114,12 @@ func TestMemoryLeaks(t *testing.T) {
 	}
 }
 
-// Тесты восстановления после ошибок
 func TestErrorRecovery(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cache := NewConcurrentCache[string](ctx, time.Second, time.Millisecond)
 
-	// Имитируем сбой (отмена контекста)
 	cancel()
 
-	// Проверяем восстановление
 	newCtx := context.Background()
 	cache = NewConcurrentCache[string](newCtx, time.Second, time.Millisecond)
 
@@ -142,11 +129,9 @@ func TestErrorRecovery(t *testing.T) {
 	}
 }
 
-// Тесты с разными типами данных
 func TestDifferentTypes(t *testing.T) {
 	ctx := context.Background()
 
-	// Тест с целыми числами
 	t.Run("Integer", func(t *testing.T) {
 		cache := NewConcurrentCache[int](ctx, time.Second, time.Millisecond)
 		err := cache.Set("key", 42)
@@ -158,7 +143,6 @@ func TestDifferentTypes(t *testing.T) {
 		}
 	})
 
-	// Тест со структурами
 	type TestStruct struct {
 		Field1 string
 		Field2 int
@@ -176,7 +160,6 @@ func TestDifferentTypes(t *testing.T) {
 		}
 	})
 
-	// Тест с указателями
 	t.Run("Pointer", func(t *testing.T) {
 		cache := NewConcurrentCache[*TestStruct](ctx, time.Second, time.Millisecond)
 		value := &TestStruct{Field1: "test", Field2: 42}
@@ -190,7 +173,6 @@ func TestDifferentTypes(t *testing.T) {
 	})
 }
 
-// Тест на проверку работы с большим объемом данных
 func TestHighLoad(t *testing.T) {
 	ctx := context.Background()
 	cache := NewShardedCache[string](ctx, time.Second, time.Millisecond)
