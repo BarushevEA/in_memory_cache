@@ -154,6 +154,8 @@ func (cMap *ConcurrentMapWithTTL[T]) tickCollection() {
 	ticker := time.NewTicker(cMap.ttlDecrement)
 	defer ticker.Stop()
 
+	isProcessed := false
+
 	for {
 		select {
 		case <-cMap.ctx.Done():
@@ -163,8 +165,13 @@ func (cMap *ConcurrentMapWithTTL[T]) tickCollection() {
 			if cMap.isClosed {
 				return
 			}
+			if isProcessed {
+				continue
+			}
 
-			var nodes []IMapNode[T]
+			isProcessed = true
+
+			nodes := make([]IMapNode[T], 0, len(cMap.data))
 
 			cMap.RLock()
 			for _, node := range cMap.data {
@@ -175,6 +182,8 @@ func (cMap *ConcurrentMapWithTTL[T]) tickCollection() {
 			for i := 0; i < len(nodes); i++ {
 				nodes[i].Tick()
 			}
+
+			isProcessed = false
 		}
 	}
 }
