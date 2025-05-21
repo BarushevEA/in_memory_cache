@@ -154,8 +154,6 @@ func (cMap *ConcurrentMapWithTTL[T]) tickCollection() {
 	ticker := time.NewTicker(cMap.ttlDecrement)
 	defer ticker.Stop()
 
-	const batchSize = 1000
-
 	for {
 		select {
 		case <-cMap.ctx.Done():
@@ -166,16 +164,16 @@ func (cMap *ConcurrentMapWithTTL[T]) tickCollection() {
 				return
 			}
 
-			var datas []IMapNode[T]
+			var nodes []IMapNode[T]
 
 			cMap.RLock()
-			for _, data := range cMap.data {
-				datas = append(datas, data)
+			for _, node := range cMap.data {
+				nodes = append(nodes, node)
 			}
 			cMap.RUnlock()
 
-			for i := 0; i < len(datas); i++ {
-				datas[i].Tick()
+			for i := 0; i < len(nodes); i++ {
+				nodes[i].Tick()
 			}
 		}
 	}
