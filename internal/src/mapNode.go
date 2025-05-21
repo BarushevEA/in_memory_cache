@@ -41,9 +41,14 @@ func (node *MapNode[T]) Tick() {
 	}
 
 	node.duration -= node.ttlDecrement
-	if node.duration <= 0 && node.remove != nil {
-		node.remove()
+	if node.duration > 0 {
+		return
 	}
+	if node.remove == nil {
+		return
+	}
+
+	node.remove()
 }
 
 // GetData resets the node's duration to its ttl value and returns the data stored in the node.
