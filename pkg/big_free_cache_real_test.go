@@ -72,8 +72,10 @@ func BenchmarkRealWorldScenario(b *testing.B) {
 	concurrentCache := NewConcurrentCache[*RealWorldData](ctx, ttl, ttlDecrement)
 	shardedCache := NewShardedCache[*RealWorldData](ctx, ttl, ttlDecrement)
 
+	// Конфигурация BigCache
 	bigcacheConfig := bigcache.DefaultConfig(ttl)
 	bigcacheConfig.Verbose = false
+	bigcacheConfig.Logger = nil // Отключаем логирование
 	bigCache, _ := bigcache.New(ctx, bigcacheConfig)
 
 	freeCache := freecache.NewCache(1024 * 1024 * 100) // 100MB
