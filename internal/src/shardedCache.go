@@ -5,177 +5,131 @@ import (
 	"errors"
 	"github.com/BarushevEA/in_memory_cache/internal/utils"
 	"sync"
+	"sync/atomic"
 	"time"
+	"unsafe"
 )
 
 type DynamicShardedMapWithTTL[T any] struct {
-	sync.RWMutex
-	shards map[uint8]ICacheInMemory[T]
-	ctx    context.Context
-	cancel context.CancelFunc
-	//ttl                       time.Duration
-	ttlDecrement              time.Duration
-	cacheInMemoryTtl          time.Duration
-	cacheInMemoryTtlDecrement time.Duration
-	isClosed                  bool
-	tickerOnce                sync.Once
+	shards    [256]*ICacheInMemory[T]
+	ctx       context.Context
+	cancel    context.CancelFunc
+	ttl       time.Duration
+	decrement time.Duration
+	isClosed  atomic.Bool
+	initOnce  sync.Once
 }
 
-func NewDynamicShardedMapWithTTL[T any](ctx context.Context, cacheInMemoryTtl time.Duration, cacheInMemoryTtlDecrement time.Duration) ICacheInMemory[T] {
-	shardedMap := &DynamicShardedMapWithTTL[T]{}
-	shardedMap.shards = make(map[uint8]ICacheInMemory[T])
-	shardedMap.ctx, shardedMap.cancel = context.WithCancel(ctx)
-	shardedMap.cacheInMemoryTtl = cacheInMemoryTtl
-	shardedMap.cacheInMemoryTtlDecrement = cacheInMemoryTtlDecrement
-	shardedMap.ttlDecrement = 5 * time.Second
-
-	if cacheInMemoryTtl <= 0 || cacheInMemoryTtlDecrement <= 0 || cacheInMemoryTtlDecrement > cacheInMemoryTtl {
-		shardedMap.cacheInMemoryTtl = 5 * time.Second
-		shardedMap.cacheInMemoryTtlDecrement = 1 * time.Second
+func NewDynamicShardedMapWithTTL[T any](ctx context.Context, ttl, decrement time.Duration) ICacheInMemory[T] {
+	if ttl <= 0 || decrement <= 0 || decrement > ttl {
+		ttl = 5 * time.Second
+		decrement = 1 * time.Second
 	}
 
-	return shardedMap
+	ctx, cancel := context.WithCancel(ctx)
+	m := &DynamicShardedMapWithTTL[T]{
+		ctx:       ctx,
+		cancel:    cancel,
+		ttl:       ttl,
+		decrement: decrement,
+	}
+
+	return m
 }
 
-func (shardedMap *DynamicShardedMapWithTTL[T]) Set(key string, value T) error {
-	if shardedMap.isClosed {
-		return errors.New("DynamicShardedMapWithTTL.Set ERROR: cannot perform operation on closed cache")
+func (m *DynamicShardedMapWithTTL[T]) getShard(hash uint8) ICacheInMemory[T] {
+	shard := (*ICacheInMemory[T])(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&m.shards[hash]))))
+	if shard != nil {
+		return *shard
 	}
 
-	defer func() {
-		shardedMap.tickerOnce.Do(func() {
-			go shardedMap.tickCollection()
-		})
-	}()
+	var mu sync.Mutex
+	mu.Lock()
+	defer mu.Unlock()
 
-	shardedMap.Lock()
-	defer shardedMap.Unlock()
+	shard = (*ICacheInMemory[T])(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&m.shards[hash]))))
+	if shard != nil {
+		return *shard
+	}
+
+	newShard := NewConcurrentMapWithTTL[T](m.ctx, m.ttl, m.decrement)
+	atomic.StorePointer(
+		(*unsafe.Pointer)(unsafe.Pointer(&m.shards[hash])),
+		unsafe.Pointer(&newShard),
+	)
+	return newShard
+}
+
+func (m *DynamicShardedMapWithTTL[T]) Set(key string, value T) error {
+	if m.isClosed.Load() {
+		return errors.New("cache is closed")
+	}
+
 	hash := utils.GetTopHash(key)
-	if shard, ok := shardedMap.shards[hash]; ok {
-		err := shard.Set(key, value)
-		if err != nil {
-			return err
-		}
-	} else {
-		newShard := NewConcurrentMapWithTTL[T](
-			shardedMap.ctx,
-			shardedMap.cacheInMemoryTtl,
-			shardedMap.cacheInMemoryTtlDecrement)
-		err := newShard.Set(key, value)
-		if err != nil {
-			return err
-		}
-		shardedMap.shards[hash] = newShard
-	}
-
-	return nil
+	shard := m.getShard(hash)
+	return shard.Set(key, value)
 }
 
-func (shardedMap *DynamicShardedMapWithTTL[T]) Get(key string) (T, bool) {
-	if shardedMap.isClosed {
+func (m *DynamicShardedMapWithTTL[T]) Get(key string) (T, bool) {
+	if m.isClosed.Load() {
 		return *new(T), false
 	}
 
-	shardedMap.RLock()
-	defer shardedMap.RUnlock()
 	hash := utils.GetTopHash(key)
-	if shard, ok := shardedMap.shards[hash]; ok {
-		return shard.Get(key)
-	}
-
-	return *new(T), false
+	shard := m.getShard(hash)
+	return shard.Get(key)
 }
 
-func (shardedMap *DynamicShardedMapWithTTL[T]) Delete(key string) {
-	if shardedMap.isClosed {
+func (m *DynamicShardedMapWithTTL[T]) Delete(key string) {
+	if m.isClosed.Load() {
 		return
 	}
 
-	shardedMap.Lock()
-	defer shardedMap.Unlock()
 	hash := utils.GetTopHash(key)
-	if shard, ok := shardedMap.shards[hash]; ok {
-		shard.Delete(key)
-		if shard.Len() == 0 {
-			delete(shardedMap.shards, hash)
+	if shard := (*ICacheInMemory[T])(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&m.shards[hash])))); shard != nil {
+		(*shard).Delete(key)
+	}
+}
+
+func (m *DynamicShardedMapWithTTL[T]) Clear() {
+	if !m.isClosed.CompareAndSwap(false, true) {
+		return
+	}
+
+	for i := range m.shards {
+		if shard := (*ICacheInMemory[T])(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&m.shards[i])))); shard != nil {
+			(*shard).Clear()
+			atomic.StorePointer((*unsafe.Pointer)(unsafe.Pointer(&m.shards[i])), nil)
 		}
 	}
+	m.cancel()
 }
 
-func (shardedMap *DynamicShardedMapWithTTL[T]) Clear() {
-	if shardedMap.isClosed {
-		return
-	}
-
-	shardedMap.isClosed = true
-
-	shardedMap.Lock()
-	defer shardedMap.Unlock()
-	for key, shard := range shardedMap.shards {
-		shard.Clear()
-		delete(shardedMap.shards, key)
-	}
-	shardedMap.shards = make(map[uint8]ICacheInMemory[T])
-}
-
-func (shardedMap *DynamicShardedMapWithTTL[T]) Len() int {
-	if shardedMap.isClosed {
+func (m *DynamicShardedMapWithTTL[T]) Len() int {
+	if m.isClosed.Load() {
 		return 0
 	}
 
-	shardedMap.RLock()
-	defer shardedMap.RUnlock()
-	var count int
-	for _, shard := range shardedMap.shards {
-		count += shard.Len()
+	total := 0
+	for i := range m.shards {
+		if shard := (*ICacheInMemory[T])(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&m.shards[i])))); shard != nil {
+			total += (*shard).Len()
+		}
 	}
-	return count
+	return total
 }
 
-func (shardedMap *DynamicShardedMapWithTTL[T]) Range(callback func(key string, value T) bool) error {
-	if shardedMap.isClosed {
-		return errors.New("DynamicShardedMapWithTTL.Range ERROR: cannot perform operation on closed cache")
+func (m *DynamicShardedMapWithTTL[T]) Range(callback func(key string, value T) bool) error {
+	if m.isClosed.Load() {
+		return errors.New("cache is closed")
 	}
 
-	shardedMap.RLock()
-	defer shardedMap.RUnlock()
-	for _, shard := range shardedMap.shards {
-		err := shard.Range(callback)
-		if err != nil {
-			return err
+	for i := range m.shards {
+		if shard := (*ICacheInMemory[T])(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&m.shards[i])))); shard != nil {
+			if err := (*shard).Range(callback); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
-}
-
-func (shardedMap *DynamicShardedMapWithTTL[T]) tickCollection() {
-	if shardedMap.isClosed {
-		return
-	}
-
-	ticker := time.NewTicker(shardedMap.ttlDecrement)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-shardedMap.ctx.Done():
-			shardedMap.Clear()
-		}
-
-		select {
-		case <-ticker.C:
-			if shardedMap.isClosed {
-				return
-			}
-
-			shardedMap.Lock()
-			for key, shard := range shardedMap.shards {
-				if shard.Len() == 0 {
-					shard.Clear()
-					delete(shardedMap.shards, key)
-				}
-			}
-			shardedMap.Unlock()
-		}
-	}
 }
