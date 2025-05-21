@@ -23,7 +23,6 @@ func BenchmarkCacheImplementations(b *testing.B) {
 	ttl := 1 * time.Second
 	ttlDecrement := 100 * time.Millisecond
 
-	// Создаем тестовые данные
 	testData := &TestStruct{
 		ID:        1,
 		Name:      "Test User",
@@ -34,16 +33,13 @@ func BenchmarkCacheImplementations(b *testing.B) {
 
 	jsonData, _ := json.Marshal(testData)
 
-	// Конфигурация BigCache
 	bigcacheConfig := bigcache.DefaultConfig(ttl)
 	bigcacheConfig.Verbose = false
-	bigcacheConfig.Logger = nil // Отключаем логирование
+	bigcacheConfig.Logger = nil
 	bigCache, _ := bigcache.New(ctx, bigcacheConfig)
 
-	// Конфигурация FreeCache (размер в байтах)
-	freeCache := freecache.NewCache(1024 * 1024 * 10) // 10MB
+	freeCache := freecache.NewCache(1024 * 1024 * 10)
 
-	// Наши реализации
 	concurrentCache := NewConcurrentCache[*TestStruct](ctx, ttl, ttlDecrement)
 	shardedCache := NewShardedCache[*TestStruct](ctx, ttl, ttlDecrement)
 
@@ -113,13 +109,11 @@ func BenchmarkCacheImplementations(b *testing.B) {
 		},
 	}
 
-	// Запускаем бенчмарки с различными размерами данных
 	for _, bm := range benchmarks {
 		b.Run(bm.name, bm.fn)
 	}
 }
 
-// Добавим тест на параллельный доступ
 func BenchmarkParallelAccess(b *testing.B) {
 	ctx := context.Background()
 	ttl := 1 * time.Second
@@ -135,10 +129,9 @@ func BenchmarkParallelAccess(b *testing.B) {
 
 	jsonData, _ := json.Marshal(testData)
 
-	// Конфигурация BigCache
 	bigcacheConfig := bigcache.DefaultConfig(ttl)
 	bigcacheConfig.Verbose = false
-	bigcacheConfig.Logger = nil // Отключаем логирование
+	bigcacheConfig.Logger = nil
 	bigCache, _ := bigcache.New(ctx, bigcacheConfig)
 
 	freeCache := freecache.NewCache(1024 * 1024 * 10)

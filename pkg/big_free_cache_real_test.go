@@ -11,7 +11,6 @@ import (
 	"time"
 )
 
-// RealWorldData имитирует реальную структуру данных
 type RealWorldData struct {
 	ID            int64     `json:"id"`
 	UserID        int64     `json:"user_id"`
@@ -31,7 +30,6 @@ type Metadata struct {
 	Extra     map[string]string `json:"extra"`
 }
 
-// генерация случайных данных
 func generateRandomData() *RealWorldData {
 	currencies := []string{"USD", "EUR", "GBP", "JPY"}
 	statuses := []string{"pending", "completed", "failed", "cancelled"}
@@ -68,17 +66,15 @@ func BenchmarkRealWorldScenario(b *testing.B) {
 	ttl := 5 * time.Minute
 	ttlDecrement := 1 * time.Second
 
-	// Инициализация кэшей
 	concurrentCache := NewConcurrentCache[*RealWorldData](ctx, ttl, ttlDecrement)
 	shardedCache := NewShardedCache[*RealWorldData](ctx, ttl, ttlDecrement)
 
-	// Конфигурация BigCache
 	bigcacheConfig := bigcache.DefaultConfig(ttl)
 	bigcacheConfig.Verbose = false
-	bigcacheConfig.Logger = nil // Отключаем логирование
+	bigcacheConfig.Logger = nil
 	bigCache, _ := bigcache.New(ctx, bigcacheConfig)
 
-	freeCache := freecache.NewCache(1024 * 1024 * 100) // 100MB
+	freeCache := freecache.NewCache(1024 * 1024 * 100)
 
 	benchmarks := []struct {
 		name string
@@ -106,7 +102,7 @@ func BenchmarkRealWorldScenario(b *testing.B) {
 				b.Run("Mixed", func(b *testing.B) {
 					b.RunParallel(func(pb *testing.PB) {
 						for pb.Next() {
-							if rand.Float32() < 0.7 { // 70% чтения, 30% записи
+							if rand.Float32() < 0.7 {
 								data := generateRandomData()
 								if rand.Float32() < 0.3 {
 									_ = concurrentCache.Set(data.TransactionID, data)

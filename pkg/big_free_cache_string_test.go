@@ -11,7 +11,6 @@ import (
 )
 
 func generateRandomString(size int) string {
-	// Создаем строку нужного размера, заполненную символом 'x'
 	var buffer bytes.Buffer
 	for i := 0; i < size; i++ {
 		buffer.WriteByte('x')
@@ -24,20 +23,16 @@ func BenchmarkStringCacheImplementations(b *testing.B) {
 	ttl := 1 * time.Second
 	ttlDecrement := 100 * time.Millisecond
 
-	// Создаем тестовые данные - строку размером 1024 байта
 	testData := generateRandomString(1024)
 	testDataBytes := []byte(testData)
 
-	// Конфигурация BigCache
 	bigcacheConfig := bigcache.DefaultConfig(ttl)
 	bigcacheConfig.Verbose = false
-	bigcacheConfig.Logger = nil // Отключаем логирование
+	bigcacheConfig.Logger = nil
 	bigCache, _ := bigcache.New(ctx, bigcacheConfig)
 
-	// Конфигурация FreeCache (размер в байтах)
-	freeCache := freecache.NewCache(1024 * 1024 * 10) // 10MB
+	freeCache := freecache.NewCache(1024 * 1024 * 10)
 
-	// Наши реализации
 	concurrentCache := NewConcurrentCache[string](ctx, ttl, ttlDecrement)
 	shardedCache := NewShardedCache[string](ctx, ttl, ttlDecrement)
 
@@ -120,10 +115,9 @@ func BenchmarkStringParallelAccess(b *testing.B) {
 	testData := generateRandomString(1024)
 	testDataBytes := []byte(testData)
 
-	// Конфигурация BigCache
 	bigcacheConfig := bigcache.DefaultConfig(ttl)
 	bigcacheConfig.Verbose = false
-	bigcacheConfig.Logger = nil // Отключаем логирование
+	bigcacheConfig.Logger = nil
 	bigCache, _ := bigcache.New(ctx, bigcacheConfig)
 
 	freeCache := freecache.NewCache(1024 * 1024 * 10)
