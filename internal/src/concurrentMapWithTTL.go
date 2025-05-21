@@ -44,12 +44,14 @@ func (cMap *ConcurrentMapWithTTL[T]) Range(callback func(key string, value T) bo
 	}
 
 	cMap.RLock()
-	defer cMap.RUnlock()
 	for key, node := range cMap.data {
 		if !callback(key, node.GetData()) {
+			cMap.RUnlock()
 			return nil
 		}
 	}
+	cMap.RUnlock()
+
 	return nil
 }
 
@@ -59,24 +61,24 @@ func (cMap *ConcurrentMapWithTTL[T]) Set(key string, value T) error {
 		return errors.New("ConcurrentMapWithTTL.Set ERROR: cannot perform operation on closed cache")
 	}
 
-	defer func() {
-		cMap.tickerOnce.Do(func() {
-			go cMap.tickCollection()
-		})
-	}()
-
 	cMap.Lock()
 	if node, ok := cMap.data[key]; ok {
 		node.SetData(value)
-	} else {
-		newNode := NewMapNode[T](value)
-		newNode.SetTTL(cMap.ttl)
-		newNode.SetTTLDecrement(cMap.ttlDecrement)
-		newNode.SetRemoveCallback(func() {
-			go cMap.Delete(key)
-		})
-		cMap.data[key] = newNode
+		cMap.Unlock()
+		return nil
 	}
+
+	newNode := NewMapNode[T](value)
+	newNode.SetTTL(cMap.ttl)
+	newNode.SetTTLDecrement(cMap.ttlDecrement)
+	newNode.SetRemoveCallback(func() {
+		go cMap.Delete(key)
+	})
+
+	cMap.data[key] = newNode
+	cMap.tickerOnce.Do(func() {
+		go cMap.tickCollection()
+	})
 	cMap.Unlock()
 
 	return nil
@@ -89,9 +91,10 @@ func (cMap *ConcurrentMapWithTTL[T]) Get(key string) (T, bool) {
 	}
 
 	cMap.RLock()
-	defer cMap.RUnlock()
+	node, ok := cMap.data[key]
+	cMap.RUnlock()
 
-	if node, ok := cMap.data[key]; ok {
+	if ok {
 		return node.GetData(), true
 	}
 
@@ -121,7 +124,6 @@ func (cMap *ConcurrentMapWithTTL[T]) Clear() {
 	cMap.isClosed = true
 
 	cMap.Lock()
-	defer cMap.Unlock()
 	for key, node := range cMap.data {
 		node.Clear()
 		delete(cMap.data, key)
@@ -129,6 +131,7 @@ func (cMap *ConcurrentMapWithTTL[T]) Clear() {
 	cMap.data = make(map[string]IMapNode[T])
 
 	cMap.cancel()
+	cMap.Unlock()
 }
 
 // Len returns the number of elements in the map. It is safe for concurrent access.
