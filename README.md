@@ -1,112 +1,178 @@
 # In-Memory Cache
 
-A Go library providing two thread-safe cache implementations with TTL support for different use cases.
+A high-performance caching library for Go that provides two thread-safe implementations with smart TTL support. Matches BigCache and FreeCache performance while offering:
+- Direct struct support without serialization
+- Generic type system integration
+- Clean and intuitive API
+
+## Features
+
+- Thread-safe operations
+- Smart TTL management with auto-extension
+- Generic type support
+- Configurable cleanup intervals
+- Zero external dependencies
 
 ## Implementations
 
-### ConcurrentMapWithTTL
+### ConcurrentCache
 
-A thread-safe map with automatic expiration of values. Optimized for:
-- Range operations (4-5x faster than sharded version)
-- Stable read performance
-- Predictable behavior with full data scans
-- Simpler architecture
+A thread-safe cache with unified storage space. Optimized for:
+- Sequential read operations
+- Read-heavy scenarios
+- Cases where operation time predictability is important
+- Situations requiring simple and clear architecture
 
-### DynamicShardedMapWithTTL
+### ShardedCache
 
-A sharded thread-safe map with automatic expiration. Features dynamic shard management and optimized for:
-- Write operations under parallel load
-- Large datasets
-- Memory efficiency
-- Automatic adaptation to load patterns
+A segmented cache with dynamic shard management. Optimized for:
+- Parallel read/write operations
+- Working with large datasets
+- High concurrency scenarios
+- Efficient memory usage
 
-## Implementation Choice Guide
+## When to Use What
 
-> **Important**: Performance characteristics heavily depend on your specific use case, data size, access patterns, and system configuration. We recommend running benchmarks in conditions similar to your production environment.
+Choose **ConcurrentCache** when:
+- Read operations dominate
+- Operation time predictability is crucial
+- Simple debugging and monitoring is required
+- Dataset size is relatively small
 
-Choose **ConcurrentMapWithTTL** when:
-- You need predictable Range operation performance
-- Your workload is read-heavy
-- You perform frequent full data scans
-- Simpler architecture is preferred
+Choose **ShardedCache** when:
+- High parallel load is expected
+- Working with large volumes of data
+- Write performance is critical
+- Memory efficiency is important
 
-Choose **DynamicShardedMapWithTTL** when:
-- Your workload is write-heavy
-- You work with large datasets
-- Memory efficiency is critical
-- You need automatic adaptation to varying loads
+## Smart TTL Management
+
+Both cache implementations feature an advanced TTL (Time-To-Live) system:
+
+### Smart TTL Extension
+- **Auto-renewal**: TTL automatically resets on each access
+- **Active Data Protection**: Frequently accessed items never expire
+- **Usage-based Expiration**: Only truly inactive data gets removed
+
+### How it works:
+1. When an item is added to cache:
+   - Initial TTL is set
+   - Expiration countdown begins
+2. On each access (Get/Set operations):
+   - TTL is reset to its initial value
+   - Item gets "fresh" lifetime
+3. For inactive items:
+   - TTL decrements gradually
+   - Removal occurs only after full TTL period without access
 
 ## Usage Examples
 
-### ConcurrentMapWithTTL
+### Basic Usage
 
 ```go
-ctx := context.Background() cache := NewConcurrentMapWithTTL[string](ctx, 5_time.Minute, 1_time.Minute)
-// Set value cache.Set("key", "value")
-// Get value value, exists := cache.Get("key")
-// Delete value cache.Delete("key")
-// Iterate over elements cache.Range(func(key string, value string) bool { // Process key-value pair return true // continue iteration })
+// Create cache ctx := context.Background() 
+// cache := NewShardedCache[string](ctx, 5 * time.Minute, 1 * time.Minute)
+
+// Basic operations 
+// cache.Set("key", "value") 
+// value, exists := cache.Get("key") 
+// cache.Delete("key")
+
+// Iterate over elements 
+//cache.Range(func(key string, value string) bool { 
+//Process key-value pair return true 
+//continue iteration 
+//})
 ```
 
-### DynamicShardedMapWithTTL
-
+### With Custom Type
 ```go
-ctx := context.Background() cache := NewDynamicShardedMapWithTTL[string](ctx, 5_time.Minute, 1_time.Minute)
-// Same API as ConcurrentMapWithTTL
+type User struct { 
+	ID int 
+	Name string 
+}
+
+cache := NewShardedCache[*User](ctx, 5 * time.Minute, 1 * time.Minute) 
+cache.Set("user:1", &User{ID: 1, Name: "John"})
 ```
 
 
-## Dynamic Sharding Process
+## Performance
 
-The DynamicShardedMapWithTTL automatically manages shards based on usage:
+The library is optimized for various use cases:
+- Parallel read/write operations
+- Large dataset handling
+- Efficient memory management
+- Predictable response time
 
-1. Initial state: Empty map
-2. As data is added: Creates shards as needed
-3. Under load: Distributes data across shards
-4. After cleanup: Removes empty shards
+> **Important**: Actual performance depends on specific use case, data size, access patterns, and system configuration. Testing in production-like conditions is recommended.
 
-### Key Distribution
+## Memory Management
 
-The performance of DynamicShardedMapWithTTL depends on key distribution:
-- Use diverse key prefixes
-- Aim for uniform distribution
-- Avoid sequential patterns
+Both cache types feature automatic TTL management:
+- Configurable item lifetime
+- Periodic cleanup of expired data
+- Efficient memory deallocation
 
-Example key patterns:
+## Usage Recommendations
 
-```go
-"user:uuid" 
-// User data "session:ts" 
-//Session data "product:sku" 
-//Product data "order:id" 
-//Order data
-```
+1. **Implementation Choice**:
+    - Test both implementations
+    - Consider data access patterns
+    - Evaluate memory requirements
 
-## Performance Considerations
+2. **TTL Configuration**:
+    - Choose TTL based on data relevance
+    - Consider update frequency
+    - Balance between freshness and performance
 
-Performance varies based on several factors:
-- Hardware configuration
-- Operating system
-- Load patterns
-- Data size
-- Key distribution
-- TTL settings
+3. **Monitoring**:
+    - Track memory usage
+    - Monitor operation execution time
+    - Keep track of cache item count
 
-For accurate performance assessment:
-1. Run benchmarks in your environment
-2. Test with your typical data patterns
-3. Simulate your expected load
-4. Monitor memory usage
-5. Verify TTL behavior
+## Benchmarking
 
+Our benchmarks show that:
+- ShardedCache excels in parallel workloads
+- ConcurrentCache provides stable read performance
+- Both implementations outperform standard map with mutex
+- Memory usage scales efficiently with data size
 
-## Environment Impact
+> Note: Run your own benchmarks to validate performance in your specific use case
 
-Performance can vary significantly based on:
-- Number of CPU cores
-- Memory architecture
-- Operating system scheduling
-- Virtualization overhead
-- Hardware specifications
+## Thread Safety
 
-Always test in an environment similar to your production setup.
+Both implementations provide comprehensive thread safety:
+- All operations are atomic
+- No external synchronization required
+- Safe for concurrent access from multiple goroutines
+
+## Error Handling
+
+The library implements robust error handling:
+- Clear error types
+- Context cancellation support
+- Proper cleanup on errors
+
+## Requirements
+
+- Go 1.24 or higher
+- Generics support
+
+## Best Practices
+
+1. **Key Design**:
+    - Use consistent key naming patterns
+    - Avoid overly long keys
+    - Consider key distribution for ShardedCache
+
+2. **Resource Management**:
+    - Set appropriate TTL values
+    - Configure cleanup intervals
+    - Monitor memory usage
+
+3. **Performance Optimization**:
+    - Choose appropriate cache size
+    - Balance between memory and performance
+    - Consider your access patterns
