@@ -105,11 +105,11 @@ func (cMap *ConcurrentMapWithTTL[T]) Delete(key string) {
 	}
 
 	cMap.Lock()
-	defer cMap.Unlock()
 	if node, ok := cMap.data[key]; ok {
 		node.Clear()
 		delete(cMap.data, key)
 	}
+	cMap.Unlock()
 }
 
 // Clear removes all elements from the map and clears their associated nodes.
