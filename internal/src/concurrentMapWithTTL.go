@@ -154,7 +154,7 @@ func (cMap *ConcurrentMapWithTTL[T]) tickCollection() {
 	ticker := time.NewTicker(cMap.ttlDecrement)
 	defer ticker.Stop()
 
-	const batchSize = 1000 // Размер батча
+	const batchSize = 1000
 
 	for {
 		select {
@@ -166,27 +166,16 @@ func (cMap *ConcurrentMapWithTTL[T]) tickCollection() {
 				return
 			}
 
-			var keys []string
+			var datas []IMapNode[T]
+
 			cMap.RLock()
-			for k := range cMap.data {
-				keys = append(keys, k)
+			for _, data := range cMap.data {
+				datas = append(datas, data)
 			}
 			cMap.RUnlock()
 
-			// Обработка батчами
-			for i := 0; i < len(keys); i += batchSize {
-				end := i + batchSize
-				if end > len(keys) {
-					end = len(keys)
-				}
-
-				cMap.Lock()
-				for _, key := range keys[i:end] {
-					if node, ok := cMap.data[key]; ok {
-						node.Tick()
-					}
-				}
-				cMap.Unlock()
+			for i := 0; i < len(datas); i++ {
+				datas[i].Tick()
 			}
 		}
 	}
