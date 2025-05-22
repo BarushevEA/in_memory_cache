@@ -9,12 +9,17 @@ type MapNode[T any] struct {
 	duration     time.Duration
 	ttlDecrement time.Duration
 	remove       func()
+
+	createdAt time.Time
+	setCount  uint32
+	getCount  uint32
 }
 
 // NewMapNode creates a new instance of a MapNode with the given data, returning it as an implementation of IMapNode.
 func NewMapNode[T any](data T) IMapNode[T] {
 	node := &MapNode[T]{}
 	node.data = data
+	node.createdAt = time.Now()
 	return node
 }
 
@@ -54,6 +59,7 @@ func (node *MapNode[T]) Tick() {
 // GetData resets the node's duration to its ttl value and returns the data stored in the node.
 func (node *MapNode[T]) GetData() T {
 	node.duration = node.ttl
+	node.getCount++
 	return node.data
 }
 
@@ -61,6 +67,7 @@ func (node *MapNode[T]) GetData() T {
 func (node *MapNode[T]) SetData(data T) {
 	node.duration = node.ttl
 	node.data = data
+	node.setCount++
 }
 
 // Clear resets all fields of the MapNode to their zero values, effectively clearing its state and binding.
@@ -70,4 +77,9 @@ func (node *MapNode[T]) Clear() {
 	node.ttl = 0
 	node.ttlDecrement = 0
 	node.data = *new(T)
+}
+
+// GetMetrics returns the creation time, set count, and get count for the MapNode instance.
+func (node *MapNode[T]) GetMetrics() (time.Time, uint32, uint32) {
+	return node.createdAt, node.setCount, node.getCount
 }

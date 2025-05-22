@@ -18,6 +18,7 @@ type IMapNode[T any] interface {
 	GetData() T
 	SetData(data T)
 	Clear()
+	GetMetrics() (time.Time, uint32, uint32)
 }
 
 // ICacheInMemory defines a generic interface for in-memory caching functionality with CRUD operations and iteration support.
@@ -35,4 +36,5 @@ type ICacheInMemory[T any] interface {
 
 	Len() int
 	Range(func(key string, value T) bool) error
+	GetNodeMetrics(key string) (time.Time, uint32, uint32, bool)
 }
