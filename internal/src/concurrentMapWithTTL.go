@@ -183,6 +183,7 @@ func (cMap *ConcurrentMapWithTTL[T]) tickCollection() {
 				nodes[i].Tick()
 			}
 
+			nodes = nil
 			isProcessed = false
 		}
 	}
