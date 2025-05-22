@@ -20,6 +20,7 @@ func NewMapNode[T any](data T) IMapNode[T] {
 	node := &MapNode[T]{}
 	node.data = data
 	node.createdAt = time.Now()
+	node.setCount = 1
 	return node
 }
 

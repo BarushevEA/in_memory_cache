@@ -3,6 +3,7 @@ package src
 import (
 	"context"
 	"fmt"
+	"github.com/stretchr/testify/assert"
 	"math/rand/v2"
 	"runtime"
 	"sync"
@@ -904,4 +905,159 @@ func BenchmarkConcurrentMapWithTTL_Range(b *testing.B) {
 			return true
 		})
 	}
+}
+
+func TestConcurrentMapWithTTL_Metrics(t *testing.T) {
+	t.Run("should track creation time for new entries", func(t *testing.T) {
+		// Arrange
+		ctx := context.Background()
+		cache := NewConcurrentMapWithTTL[string](ctx, 5*time.Second, 1*time.Second)
+		beforeSet := time.Now()
+
+		// Act
+		_ = cache.Set("test-key", "test-value")
+		time.Sleep(time.Millisecond)
+		value, createdAt, _, _, exists := cache.GetNodeValueWithMetrics("test-key")
+
+		// Assert
+		assert.True(t, exists)
+		assert.Equal(t, "test-value", value)
+		assert.True(t, createdAt.After(beforeSet) || createdAt.Equal(beforeSet))
+		assert.True(t, createdAt.Before(time.Now()))
+	})
+
+	t.Run("should correctly count get operations", func(t *testing.T) {
+		// Arrange
+		ctx := context.Background()
+		cache := NewConcurrentMapWithTTL[string](ctx, 5*time.Second, 1*time.Second)
+		_ = cache.Set("test-key", "test-value")
+
+		// Act
+		for i := 0; i < 5; i++ {
+			_, _ = cache.Get("test-key")
+		}
+		_, _, _, getCount, exists := cache.GetNodeValueWithMetrics("test-key")
+
+		// Assert
+		assert.True(t, exists)
+		assert.Equal(t, uint32(5), getCount)
+	})
+
+	t.Run("should correctly count set operations", func(t *testing.T) {
+		// Arrange
+		ctx := context.Background()
+		cache := NewConcurrentMapWithTTL[string](ctx, 5*time.Second, 1*time.Second)
+
+		// Act
+		_ = cache.Set("test-key", "value1")
+		_ = cache.Set("test-key", "value2")
+		_ = cache.Set("test-key", "value3")
+		_, _, setCount, _, exists := cache.GetNodeValueWithMetrics("test-key")
+
+		// Assert
+		assert.True(t, exists)
+		assert.Equal(t, uint32(3), setCount)
+	})
+
+	t.Run("should track separate metrics for different keys", func(t *testing.T) {
+		// Arrange
+		ctx := context.Background()
+		cache := NewConcurrentMapWithTTL[string](ctx, 5*time.Second, 1*time.Second)
+
+		// Act
+		_ = cache.Set("key1", "value1")
+		_ = cache.Set("key2", "value2")
+
+		_, _ = cache.Get("key1")
+		_, _ = cache.Get("key1")
+		_, _ = cache.Get("key2")
+
+		_, _, setCount1, getCount1, _ := cache.GetNodeValueWithMetrics("key1")
+		_, _, setCount2, getCount2, _ := cache.GetNodeValueWithMetrics("key2")
+
+		// Assert
+		assert.Equal(t, uint32(1), setCount1)
+		assert.Equal(t, uint32(2), getCount1)
+		assert.Equal(t, uint32(1), setCount2)
+		assert.Equal(t, uint32(1), getCount2)
+	})
+
+	t.Run("should correctly handle metrics with RangeWithMetrics", func(t *testing.T) {
+		// Arrange
+		ctx := context.Background()
+		cache := NewConcurrentMapWithTTL[string](ctx, 5*time.Second, 1*time.Second)
+		_ = cache.Set("key1", "value1")
+		_ = cache.Set("key1", "value2") // Увеличивает счетчик setCount
+		_, _ = cache.Get("key1")
+
+		// Act
+		var foundKey string
+		var foundValue string
+		var foundSetCount uint32
+		var foundGetCount uint32
+
+		_ = cache.RangeWithMetrics(func(key string, value string, createdAt time.Time, setCount uint32, getCount uint32) bool {
+			foundKey = key
+			foundValue = value
+			foundSetCount = setCount
+			foundGetCount = getCount
+			return true
+		})
+
+		// Assert
+		assert.Equal(t, "key1", foundKey)
+		assert.Equal(t, "value2", foundValue)
+		assert.Equal(t, uint32(2), foundSetCount)
+		assert.Equal(t, uint32(1), foundGetCount)
+	})
+
+	t.Run("should reset metrics on Delete", func(t *testing.T) {
+		// Arrange
+		ctx := context.Background()
+		cache := NewConcurrentMapWithTTL[string](ctx, 5*time.Second, 1*time.Second)
+		_ = cache.Set("test-key", "test-value")
+		_, _ = cache.Get("test-key")
+
+		// Act
+		cache.Delete("test-key")
+		_, _, _, _, exists := cache.GetNodeValueWithMetrics("test-key")
+
+		// Assert
+		assert.False(t, exists)
+	})
+
+	t.Run("should reset metrics on Clear", func(t *testing.T) {
+		// Arrange
+		ctx := context.Background()
+		cache := NewConcurrentMapWithTTL[string](ctx, 5*time.Second, 1*time.Second)
+		_ = cache.Set("key1", "value1")
+		_ = cache.Set("key2", "value2")
+
+		// Act
+		cache.Clear()
+		_, _, _, _, exists1 := cache.GetNodeValueWithMetrics("key1")
+		_, _, _, _, exists2 := cache.GetNodeValueWithMetrics("key2")
+
+		// Assert
+		assert.False(t, exists1)
+		assert.False(t, exists2)
+		assert.Equal(t, 0, cache.Len())
+	})
+
+	t.Run("should not affect metrics when getting non-existent key", func(t *testing.T) {
+		// Arrange
+		ctx := context.Background()
+		cache := NewConcurrentMapWithTTL[string](ctx, 5*time.Second, 1*time.Second)
+		_ = cache.Set("existing-key", "value")
+		_ = cache.Set("existing-key", "new-value")
+
+		// Act
+		_, existingOk := cache.Get("non-existent-key")
+		_, _, setCount, getCount, _ := cache.GetNodeValueWithMetrics("existing-key")
+
+		// Assert
+		assert.False(t, existingOk)
+		assert.Equal(t, uint32(2), setCount)
+		assert.Equal(t, uint32(0), getCount)
+	})
 }

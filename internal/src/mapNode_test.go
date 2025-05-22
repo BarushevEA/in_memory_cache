@@ -436,10 +436,10 @@ func TestMapNode_Metrics(t *testing.T) {
 	t.Run("should correctly count set operations", func(t *testing.T) {
 		// Arrange
 		node := NewMapNode("initial")
-		expectedSetCount := uint32(3)
+		expectedSetCount := uint32(2)
 
 		// Act
-		for i := uint32(0); i < expectedSetCount; i++ {
+		for i := uint32(1); i < expectedSetCount; i++ {
 			node.SetData("new value")
 		}
 		_, _, actualSetCount, _ := node.GetDataWithMetrics()
@@ -452,13 +452,13 @@ func TestMapNode_Metrics(t *testing.T) {
 		// Arrange
 		node := NewMapNode("test")
 		expectedGetCount := uint32(3)
-		expectedSetCount := uint32(2)
+		expectedSetCount := uint32(3)
 
 		// Act
 		for i := uint32(0); i < expectedGetCount; i++ {
 			node.GetData()
 		}
-		for i := uint32(0); i < expectedSetCount; i++ {
+		for i := uint32(1); i < expectedSetCount; i++ {
 			node.SetData("new value")
 		}
 		_, _, setCount, getCount := node.GetDataWithMetrics()
@@ -497,7 +497,7 @@ func TestMapNode_Metrics(t *testing.T) {
 		// Assert
 		assert.Equal(t, "new value", data)
 		assert.True(t, createdAt.Before(time.Now()))
-		assert.Equal(t, uint32(1), setCount)
+		assert.Equal(t, uint32(2), setCount)
 		assert.Equal(t, uint32(1), getCount)
 	})
 }
