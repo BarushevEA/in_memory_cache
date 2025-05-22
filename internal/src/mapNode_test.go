@@ -6,6 +6,7 @@ import (
 	"time"
 )
 
+// TestMapNode_SetRemoveCallback tests that the remove callback is correctly set and invoked when the node is removed.
 func TestMapNode_SetRemoveCallback(t *testing.T) {
 	var called bool
 	removeFunc := func() { called = true }
@@ -17,6 +18,7 @@ func TestMapNode_SetRemoveCallback(t *testing.T) {
 	assert.True(t, called, "remove callback should be called")
 }
 
+// TestMapNode_SetTTL tests the SetTTL method of MapNode to ensure it correctly updates the TTL and duration values.
 func TestMapNode_SetTTL(t *testing.T) {
 	node := NewMapNode[int](42).(*MapNode[int])
 
@@ -39,6 +41,7 @@ func TestMapNode_SetTTL(t *testing.T) {
 	}
 }
 
+// TestMapNode_SetTTLDecrement tests the SetTTLDecrement method by verifying the ttlDecrement field updates correctly.
 func TestMapNode_SetTTLDecrement(t *testing.T) {
 	node := NewMapNode[int](42).(*MapNode[int])
 
@@ -60,6 +63,7 @@ func TestMapNode_SetTTLDecrement(t *testing.T) {
 	}
 }
 
+// TestMapNode_Tick is a test function that validates the behavior of the Tick method in the MapNode implementation.
 func TestMapNode_Tick(t *testing.T) {
 	var callbackCalled bool
 	node := NewMapNode[int](42).(*MapNode[int])
@@ -95,6 +99,7 @@ func TestMapNode_Tick(t *testing.T) {
 	}
 }
 
+// TestMapNode_GetData tests the GetData function of MapNode, ensuring data retrieval resets TTL and handling various scenarios.
 func TestMapNode_GetData(t *testing.T) {
 	testCases := []struct {
 		name        string
@@ -115,7 +120,7 @@ func TestMapNode_GetData(t *testing.T) {
 
 			if tc.name == "get data after tick" {
 				node.SetTTLDecrement(1 * time.Second)
-				node.Tick() // уменьшаем duration
+				node.Tick()
 			}
 
 			data := node.GetData()
@@ -125,6 +130,7 @@ func TestMapNode_GetData(t *testing.T) {
 	}
 }
 
+// TestNewMapNode verifies the NewMapNode function by testing its behavior with various data types and initial state values.
 func TestNewMapNode(t *testing.T) {
 	testCases := []struct {
 		name     string
@@ -148,6 +154,7 @@ func TestNewMapNode(t *testing.T) {
 	}
 }
 
+// TestMapNode_MultipleTicks verifies the behavior of sequential TTL decrements and ensures the removal callback is triggered on expiration.
 func TestMapNode_MultipleTicks(t *testing.T) {
 	var callbackCalled bool
 	node := NewMapNode[int](42).(*MapNode[int])
@@ -156,7 +163,6 @@ func TestMapNode_MultipleTicks(t *testing.T) {
 	node.SetTTL(5 * time.Second)
 	node.SetTTLDecrement(1 * time.Second)
 
-	// Проверяем последовательное уменьшение duration
 	expectedDurations := []time.Duration{4 * time.Second, 3 * time.Second, 2 * time.Second, 1 * time.Second, 0}
 
 	for i, expected := range expectedDurations {
@@ -171,14 +177,13 @@ func TestMapNode_MultipleTicks(t *testing.T) {
 	}
 }
 
+// TestMapNode_UpdateRemoveCallback verifies that the remove callback can be updated and only the latest callback is invoked.
 func TestMapNode_UpdateRemoveCallback(t *testing.T) {
 	var called1, called2 bool
 	node := NewMapNode[int](42).(*MapNode[int])
 
-	// Устанавливаем первый callback
 	node.SetRemoveCallback(func() { called1 = true })
 
-	// Обновляем на второй callback
 	node.SetRemoveCallback(func() { called2 = true })
 
 	node.remove()
@@ -187,6 +192,7 @@ func TestMapNode_UpdateRemoveCallback(t *testing.T) {
 	assert.True(t, called2, "second callback should be called")
 }
 
+// TestMapNode_SetData tests the behavior of the SetData method on a MapNode instance with various input data scenarios.
 func TestMapNode_SetData(t *testing.T) {
 	testCases := []struct {
 		name        string
@@ -212,11 +218,11 @@ func TestMapNode_SetData(t *testing.T) {
 	}
 }
 
+// TestMapNode_SetDataWithTTL tests that the data of a MapNode can be updated without affecting its TTL or duration.
 func TestMapNode_SetDataWithTTL(t *testing.T) {
 	node := NewMapNode[int](42).(*MapNode[int])
 	node.SetTTL(5 * time.Second)
 
-	// Проверяем, что SetData не влияет на TTL и duration
 	initialTTL := node.ttl
 	initialDuration := node.duration
 
@@ -227,6 +233,7 @@ func TestMapNode_SetDataWithTTL(t *testing.T) {
 	assert.Equal(t, initialDuration, node.duration, "duration should remain unchanged")
 }
 
+// TestMapNode_ReferenceTypes tests the behavior of MapNode with various reference types, ensuring correctness and immutability.
 func TestMapNode_ReferenceTypes(t *testing.T) {
 	type TestStruct struct {
 		Value int
@@ -243,12 +250,10 @@ func TestMapNode_ReferenceTypes(t *testing.T) {
 				initial := &TestStruct{Value: 42, Data: "initial"}
 				node := NewMapNode(initial).(*MapNode[*TestStruct])
 
-				// Проверяем, что изменение исходной структуры не влияет на данные в узле
 				initial.Value = 100
 				nodeData := node.GetData()
 				assert.Equal(t, 100, nodeData.Value, "node should reference the same memory")
 
-				// Проверяем установку нового указателя
 				newData := &TestStruct{Value: 200, Data: "new"}
 				node.SetData(newData)
 				assert.Equal(t, newData, node.GetData(), "node should store new pointer")
@@ -260,12 +265,10 @@ func TestMapNode_ReferenceTypes(t *testing.T) {
 				initial := []int{1, 2, 3}
 				node := NewMapNode(initial).(*MapNode[[]int])
 
-				// Проверяем, что изменение исходного слайса не влияет на данные в узле
 				initial[0] = 10
 				nodeData := node.GetData()
 				assert.Equal(t, 10, nodeData[0], "node should reference the same slice")
 
-				// Проверяем установку нового слайса
 				newData := []int{4, 5, 6}
 				node.SetData(newData)
 				assert.Equal(t, newData, node.GetData(), "node should store new slice")
@@ -277,12 +280,10 @@ func TestMapNode_ReferenceTypes(t *testing.T) {
 				initial := map[string]int{"a": 1, "b": 2}
 				node := NewMapNode(initial).(*MapNode[map[string]int])
 
-				// Проверяем, что изменение исходной мапы не влияет на данные в узле
 				initial["a"] = 10
 				nodeData := node.GetData()
 				assert.Equal(t, 10, nodeData["a"], "node should reference the same map")
 
-				// Проверяем установку новой мапы
 				newData := map[string]int{"c": 3, "d": 4}
 				node.SetData(newData)
 				assert.Equal(t, newData, node.GetData(), "node should store new map")
@@ -305,7 +306,6 @@ func TestMapNode_ReferenceTypes(t *testing.T) {
 
 				node := NewMapNode(initial).(*MapNode[*NestedStruct])
 
-				// Проверяем, что изменения в глубоко вложенных структурах отражаются
 				initial.Ptr.Value = 100
 				initial.Slice[0] = 10
 				initial.Map["a"] = 10
@@ -315,7 +315,6 @@ func TestMapNode_ReferenceTypes(t *testing.T) {
 				assert.Equal(t, 10, nodeData.Slice[0], "nested slice should be modified")
 				assert.Equal(t, 10, nodeData.Map["a"], "nested map should be modified")
 
-				// Проверяем установку новой структуры
 				newData := &NestedStruct{
 					Ptr:   &TestStruct{Value: 200, Data: "new"},
 					Slice: []int{4, 5, 6},
@@ -347,14 +346,12 @@ func TestMapNode_ReferenceTypes(t *testing.T) {
 				var initial interface{} = &TestStruct{Value: 42, Data: "test"}
 				node := NewMapNode(initial).(*MapNode[interface{}])
 
-				// Проверяем, что мы можем получить исходный тип через приведение типов
 				if ptr, ok := node.GetData().(*TestStruct); ok {
 					assert.Equal(t, 42, ptr.Value, "should preserve original value")
 				} else {
 					t.Error("failed to cast interface to original type")
 				}
 
-				// Проверяем установку значения другого типа через интерфейс
 				newData := "string value"
 				node.SetData(newData)
 				assert.Equal(t, newData, node.GetData(), "should store new value of different type")
@@ -367,12 +364,12 @@ func TestMapNode_ReferenceTypes(t *testing.T) {
 	}
 }
 
+// TestMapNode_Clear verifies the behavior of the Clear method, ensuring it resets all fields and removes callbacks.
 func TestMapNode_Clear(t *testing.T) {
 	testCases := []struct {
 		name string
 		test func(t *testing.T)
 	}{
-		// ... остальные тест-кейсы ...
 
 		{
 			name: "clear and verify callback removal",
@@ -380,31 +377,25 @@ func TestMapNode_Clear(t *testing.T) {
 				callbackExecuted := false
 				node := NewMapNode(42).(*MapNode[int])
 
-				// Устанавливаем callback и проверяем его работу до очистки
 				node.SetRemoveCallback(func() { callbackExecuted = true })
 				node.SetTTL(5 * time.Second)
 				node.SetTTLDecrement(1 * time.Second)
 
-				// Проверяем, что callback работает до очистки
 				node.duration = 0
 				node.remove()
 				assert.True(t, callbackExecuted, "callback should work before clear")
 
-				// Сбрасываем флаг и очищаем узел
 				callbackExecuted = false
 				node.Clear()
 
-				// Проверяем, что callback удален
 				assert.Nil(t, node.remove, "callback should be nil after clear")
 
-				// Проверяем остальные поля
 				assert.Equal(t, 0, node.data, "data should be zero")
 				assert.Equal(t, time.Duration(0), node.ttl, "ttl should be zero")
 				assert.Equal(t, time.Duration(0), node.duration, "duration should be zero")
 				assert.Equal(t, time.Duration(0), node.ttlDecrement, "ttlDecrement should be zero")
 			},
 		},
-		// ... остальные тест-кейсы ...
 	}
 
 	for _, tc := range testCases {

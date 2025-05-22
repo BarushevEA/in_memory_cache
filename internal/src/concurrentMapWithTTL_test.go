@@ -68,18 +68,15 @@ func TestConcurrentMapWithTTL_ExpiredValue(t *testing.T) {
 
 	cMap := NewConcurrentMapWithTTL[string](ctx, ttl, ttlDecrement)
 
-	// Проверяем начальное состояние
 	if l := cMap.Len(); l != 0 {
 		t.Fatalf("Initial length should be 0, got %d", l)
 	}
 
-	// Устанавливаем значение
 	err := cMap.Set("test-key", "test-value")
 	if err != nil {
 		t.Fatalf("Set() error = %v", err)
 	}
 
-	// Проверяем что значение установлено
 	if l := cMap.Len(); l != 1 {
 		t.Fatalf("Length should be 1 after Set, got %d", l)
 	}
@@ -88,15 +85,12 @@ func TestConcurrentMapWithTTL_ExpiredValue(t *testing.T) {
 		t.Fatal("Value should exist and match immediately after Set()")
 	}
 
-	// Ждем истечения TTL
 	time.Sleep(ttl + 3*ttlDecrement)
 
-	// Проверяем что значение удалено
 	if val, found := cMap.Get("test-key"); found {
 		t.Fatalf("Value should be expired and removed, but got %v", val)
 	}
 
-	// Проверяем финальную длину
 	if l := cMap.Len(); l != 0 {
 		t.Fatalf("Final length should be 0, got %d", l)
 	}
@@ -114,19 +108,15 @@ func TestConcurrentMapWithTTL_Delete(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Создаем новую карту для каждого тестового случая
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			cMap := NewConcurrentMapWithTTL[string](ctx, 5*time.Second, 1*time.Second)
 
-			// Заполняем начальными данными
 			cMap.Set("key1", "value1")
 			cMap.Set("key2", "value2")
 
-			// Выполняем удаление
 			cMap.Delete(tt.keyToDelete)
 
-			// Даем небольшое время для асинхронных операций
 			time.Sleep(50 * time.Millisecond)
 
 			if got := cMap.Len(); got != tt.remaining {
@@ -194,14 +184,12 @@ func TestConcurrentMapWithTTL_Concurrent(t *testing.T) {
 
 	cMap := NewConcurrentMapWithTTL[string](ctx, 200*time.Millisecond, 50*time.Millisecond)
 
-	// Тестируем конкурентные операции записи/чтения
 	const goroutines = 10
 	const operationsPerGoroutine = 100
 
 	var wg sync.WaitGroup
-	wg.Add(goroutines * 2) // для writers и readers
+	wg.Add(goroutines * 2)
 
-	// Writers
 	for i := 0; i < goroutines; i++ {
 		go func(id int) {
 			defer wg.Done()
@@ -215,7 +203,6 @@ func TestConcurrentMapWithTTL_Concurrent(t *testing.T) {
 		}(i)
 	}
 
-	// Readers
 	for i := 0; i < goroutines; i++ {
 		go func(id int) {
 			defer wg.Done()
@@ -237,7 +224,6 @@ func TestConcurrentMapWithTTL_TTLBehavior(t *testing.T) {
 	decrement := 20 * time.Millisecond
 	cMap := NewConcurrentMapWithTTL[string](ctx, ttl, decrement)
 
-	// Тест 1: Значение должно существовать до истечения TTL
 	cMap.Set("test1", "value1")
 	time.Sleep(ttl / 2)
 	if val, exists := cMap.Get("test1"); !exists {
@@ -246,13 +232,11 @@ func TestConcurrentMapWithTTL_TTLBehavior(t *testing.T) {
 		t.Errorf("Expected value1, got %v", val)
 	}
 
-	// Тест 2: Значение должно исчезнуть после TTL
 	time.Sleep(ttl)
 	if _, exists := cMap.Get("test1"); exists {
 		t.Error("Value should be removed after TTL expiration")
 	}
 
-	// Тест 3: Обновление существующего значения должно сбросить TTL
 	cMap.Set("test2", "initial")
 	time.Sleep(ttl / 2)
 	cMap.Set("test2", "updated")
@@ -266,22 +250,17 @@ func TestConcurrentMapWithTTL_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cMap := NewConcurrentMapWithTTL[string](ctx, time.Second, 100*time.Millisecond)
 
-	// Заполняем данными
 	cMap.Set("key1", "value1")
 	cMap.Set("key2", "value2")
 
-	// Отменяем контекст
 	cancel()
 
-	// Даем время на очистку
 	time.Sleep(200 * time.Millisecond)
 
-	// Проверяем, что карта пуста после отмены контекста
 	if l := cMap.Len(); l != 0 {
 		t.Errorf("Map should be empty after context cancellation, got length %d", l)
 	}
 
-	// Проверяем, что новые записи отвергаются
 	err := cMap.Set("new-key", "new-value")
 	if err == nil {
 		t.Error("Set should return error after context cancellation")
@@ -296,7 +275,6 @@ func TestConcurrentMapWithTTL_ConcurrentExpiration(t *testing.T) {
 	decrement := 50 * time.Millisecond
 	cMap := NewConcurrentMapWithTTL[string](ctx, ttl, decrement)
 
-	// Добавляем множество элементов с разным временем жизни
 	const numItems = 100
 	var wg sync.WaitGroup
 	wg.Add(numItems)
@@ -311,16 +289,13 @@ func TestConcurrentMapWithTTL_ConcurrentExpiration(t *testing.T) {
 
 	wg.Wait()
 
-	// Проверяем, что все элементы добавлены
 	initialLen := cMap.Len()
 	if initialLen != numItems {
 		t.Errorf("Expected %d items, got %d", numItems, initialLen)
 	}
 
-	// Ждем достаточно времени для истечения TTL
 	time.Sleep(ttl + 2*decrement)
 
-	// Проверяем, что все элементы удалены
 	finalLen := cMap.Len()
 	if finalLen != 0 {
 		t.Errorf("Expected 0 items after TTL, got %d", finalLen)
@@ -331,21 +306,17 @@ func TestConcurrentMapWithTTL_ZeroTTL(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Создаем карту с нулевым TTL
 	cMap := NewConcurrentMapWithTTL[string](ctx, 0, time.Millisecond)
 
-	// Пробуем добавить значение
 	err := cMap.Set("key", "value")
 	if err != nil {
 		t.Errorf("Set with zero TTL should not return error, got: %v", err)
 	}
 
-	// Значение должно быть доступно сразу после установки
 	if val, exists := cMap.Get("key"); !exists || val != "value" {
 		t.Error("Value should be accessible immediately after Set with zero TTL")
 	}
 
-	// Ждем некоторое время и проверяем, что значение все еще доступно
 	time.Sleep(100 * time.Millisecond)
 	if val, exists := cMap.Get("key"); !exists || val != "value" {
 		t.Error("Value should persist with zero TTL")
@@ -356,16 +327,13 @@ func TestConcurrentMapWithTTL_NegativeTTL(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Создаем карту с отрицательным TTL
 	cMap := NewConcurrentMapWithTTL[string](ctx, -time.Second, time.Millisecond)
 
-	// Проверяем, что карта работает с дефолтными значениями
 	err := cMap.Set("key", "value")
 	if err != nil {
 		t.Error("Set should work with default TTL values")
 	}
 
-	// Проверяем, что значение установлено
 	if val, exists := cMap.Get("key"); !exists || val != "value" {
 		t.Error("Value should be retrievable after Set with default TTL")
 	}
@@ -396,7 +364,7 @@ func TestConcurrentMapWithTTL_Stress(t *testing.T) {
 			for j := 0; j < numOperations; j++ {
 				key := fmt.Sprintf("key-%d-%d", id, j)
 				_ = cMap.Set(key, "value")
-				time.Sleep(time.Microsecond) // Небольшая задержка для создания "реальных" условий
+				time.Sleep(time.Microsecond)
 			}
 		}(i)
 	}
@@ -435,33 +403,25 @@ func TestConcurrentMapWithTTL_TTLReset(t *testing.T) {
 	ttl := 200 * time.Millisecond
 	cMap := NewConcurrentMapWithTTL[string](ctx, ttl, 50*time.Millisecond)
 
-	// Устанавливаем начальное значение
 	cMap.Set("key", "initial")
 
-	// Ждем почти до истечения TTL
 	time.Sleep(ttl - 50*time.Millisecond)
 
-	// Обновляем значение
 	cMap.Set("key", "updated")
 
-	// Ждем больше половины TTL
 	time.Sleep(ttl/2 + 10*time.Millisecond)
 
-	// Значение должно все еще существовать
 	if val, exists := cMap.Get("key"); !exists || val != "updated" {
 		t.Error("Value should exist with updated content after TTL reset")
 	}
 
-	// Ждем до полного истечения нового TTL с дополнительным запасом
 	time.Sleep(ttl + 100*time.Millisecond)
 
-	// Проверяем несколько раз с небольшими интервалами
 	for i := 0; i < 3; i++ {
 		if _, exists := cMap.Get("key"); exists {
 			time.Sleep(50 * time.Millisecond)
 			continue
 		}
-		// Если значение удалено, тест пройден
 		return
 	}
 	t.Error("Value should be removed after full TTL period")
@@ -473,7 +433,6 @@ func TestConcurrentMapWithTTL_RangeEarlyStop(t *testing.T) {
 
 	cMap := NewConcurrentMapWithTTL[string](ctx, time.Second, 100*time.Millisecond)
 
-	// Заполняем данными
 	expectedKeys := []string{"key1", "key2", "key3", "key4"}
 	for _, key := range expectedKeys {
 		cMap.Set(key, "value")
@@ -482,7 +441,7 @@ func TestConcurrentMapWithTTL_RangeEarlyStop(t *testing.T) {
 	visitedKeys := make([]string, 0)
 	err := cMap.Range(func(key string, value string) bool {
 		visitedKeys = append(visitedKeys, key)
-		return len(visitedKeys) < 2 // Останавливаемся после двух элементов
+		return len(visitedKeys) < 2
 	})
 
 	if err != nil {
@@ -500,13 +459,10 @@ func TestConcurrentMapWithTTL_OperationsAfterClose(t *testing.T) {
 
 	cMap := NewConcurrentMapWithTTL[string](ctx, time.Second, 100*time.Millisecond)
 
-	// Заполняем начальными данными
 	cMap.Set("key1", "value1")
 
-	// Закрываем карту
 	cMap.Clear()
 
-	// Проверяем операции после закрытия
 	tests := []struct {
 		name string
 		op   func() error
@@ -536,12 +492,10 @@ func TestConcurrentMapWithTTL_OperationsAfterClose(t *testing.T) {
 		})
 	}
 
-	// Проверяем Get после закрытия
 	if _, found := cMap.Get("key1"); found {
 		t.Error("Get should return not found after cache is closed")
 	}
 
-	// Проверяем Len после закрытия
 	if l := cMap.Len(); l != 0 {
 		t.Errorf("Len should return 0 after close, got %d", l)
 	}
@@ -567,21 +521,17 @@ func TestConcurrentMapWithTTL_InvalidTTLParameters(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cMap := NewConcurrentMapWithTTL[string](ctx, tt.ttl, tt.ttlDecrement)
 
-			// Проверяем, что карта использует дефолтные значения
 			err := cMap.Set("test", "value")
 			if err != nil {
 				t.Errorf("Set() failed with error: %v", err)
 			}
 
-			// Проверяем, что значение доступно
 			if val, exists := cMap.Get("test"); !exists || val != "value" {
 				t.Error("Value should be accessible after Set with default TTL values")
 			}
 
-			// Ждем немного меньше дефолтного TTL
 			time.Sleep(4 * time.Second)
 
-			// Значение все еще должно быть доступно
 			if _, exists := cMap.Get("test"); !exists {
 				t.Error("Value should still exist before default TTL expiration")
 			}
@@ -597,34 +547,27 @@ func TestConcurrentMapWithTTL_TickCollection(t *testing.T) {
 	decrement := 100 * time.Millisecond
 	cMap := NewConcurrentMapWithTTL[string](ctx, ttl, decrement)
 
-	// Устанавливаем значение для запуска tickCollection
 	err := cMap.Set("key1", "value1")
 	if err != nil {
 		t.Fatalf("Failed to set initial value: %v", err)
 	}
 
-	// Проверяем, что значение существует
 	if _, exists := cMap.Get("key1"); !exists {
 		t.Fatal("Initial value should exist")
 	}
 
-	// Ждем один тик
 	time.Sleep(decrement + 10*time.Millisecond)
 
-	// Значение должно все еще существовать
 	if _, exists := cMap.Get("key1"); !exists {
 		t.Error("Value should exist after one tick")
 	}
 
-	// Ждем полного TTL
 	time.Sleep(ttl + decrement)
 
-	// Значение должно быть удалено
 	if _, exists := cMap.Get("key1"); exists {
 		t.Error("Value should be removed after TTL expiration")
 	}
 
-	// Проверяем, что tickCollection все еще работает
 	err = cMap.Set("key2", "value2")
 	if err != nil {
 		t.Fatalf("Failed to set second value: %v", err)
@@ -647,7 +590,6 @@ func TestConcurrentMapWithTTL_MemoryLeak(t *testing.T) {
 
 	cMap := NewConcurrentMapWithTTL[string](ctx, 100*time.Millisecond, 20*time.Millisecond)
 
-	// Добавляем первый элемент и ждем инициализации тикера
 	err := cMap.Set("init", "value")
 	if err != nil {
 		t.Fatal("Failed to initialize map")
@@ -660,10 +602,8 @@ func TestConcurrentMapWithTTL_MemoryLeak(t *testing.T) {
 			cMap.Set(key, "value")
 		}
 
-		// Увеличиваем время ожидания
 		time.Sleep(250 * time.Millisecond)
 
-		// Несколько попыток проверки
 		for attempt := 0; attempt < 3; attempt++ {
 			if l := cMap.Len(); l > 0 {
 				time.Sleep(50 * time.Millisecond)
@@ -690,9 +630,8 @@ func TestConcurrentMapWithTTL_RaceCondition(t *testing.T) {
 	operations := 1000
 	goroutines := 10
 
-	wg.Add(goroutines * 4) // для Set, Get, Delete и Range операций
+	wg.Add(goroutines * 4)
 
-	// Set operations
 	for i := 0; i < goroutines; i++ {
 		go func(id int) {
 			defer wg.Done()
@@ -703,7 +642,6 @@ func TestConcurrentMapWithTTL_RaceCondition(t *testing.T) {
 		}(i)
 	}
 
-	// Get operations
 	for i := 0; i < goroutines; i++ {
 		go func(id int) {
 			defer wg.Done()
@@ -714,7 +652,6 @@ func TestConcurrentMapWithTTL_RaceCondition(t *testing.T) {
 		}(i)
 	}
 
-	// Delete operations
 	for i := 0; i < goroutines; i++ {
 		go func(id int) {
 			defer wg.Done()
@@ -725,7 +662,6 @@ func TestConcurrentMapWithTTL_RaceCondition(t *testing.T) {
 		}(i)
 	}
 
-	// Range operations
 	for i := 0; i < goroutines; i++ {
 		go func() {
 			defer wg.Done()
@@ -750,31 +686,25 @@ func TestConcurrentMapWithTTL_UpdateMemoryLeak(t *testing.T) {
 
 	cMap := NewConcurrentMapWithTTL[string](ctx, 100*time.Millisecond, 20*time.Millisecond)
 
-	// Инициализация тикера
 	err := cMap.Set("init", "value")
 	if err != nil {
 		t.Fatal("Failed to initialize map")
 	}
 	time.Sleep(50 * time.Millisecond)
 
-	// Создаем фиксированный набор ключей
 	const keysCount = 1000
 	keys := make([]string, keysCount)
 	for i := 0; i < keysCount; i++ {
 		keys[i] = fmt.Sprintf("key-%d", i)
 	}
 
-	// Обновляем значения многократно
 	for i := 0; i < 100; i++ {
-		// Обновляем все ключи
 		for _, key := range keys {
 			cMap.Set(key, fmt.Sprintf("value-%d", i))
 		}
 
-		// Ждем истечения TTL
 		time.Sleep(250 * time.Millisecond)
 
-		// Проверяем очистку
 		for attempt := 0; attempt < 3; attempt++ {
 			if l := cMap.Len(); l > 0 {
 				time.Sleep(50 * time.Millisecond)
@@ -797,7 +727,6 @@ func TestConcurrentMapWithTTL_ConcurrentUpdateDelete(t *testing.T) {
 
 	cMap := NewConcurrentMapWithTTL[string](ctx, 100*time.Millisecond, 20*time.Millisecond)
 
-	// Инициализация
 	err := cMap.Set("init", "value")
 	if err != nil {
 		t.Fatal("Failed to initialize map")
@@ -810,33 +739,30 @@ func TestConcurrentMapWithTTL_ConcurrentUpdateDelete(t *testing.T) {
 	)
 
 	var wg sync.WaitGroup
-	wg.Add(goroutines * 2) // для updaters и deleters
+	wg.Add(goroutines * 2)
 
-	// Updaters
 	for i := 0; i < goroutines; i++ {
 		go func(id int) {
 			defer wg.Done()
 			for j := 0; j < operations; j++ {
-				key := fmt.Sprintf("key-%d", j%100) // Переиспользуем 100 ключей
+				key := fmt.Sprintf("key-%d", j%100)
 				cMap.Set(key, fmt.Sprintf("value-%d-%d", id, j))
-				time.Sleep(time.Millisecond) // Небольшая задержка
+				time.Sleep(time.Millisecond)
 			}
 		}(i)
 	}
 
-	// Deleters
 	for i := 0; i < goroutines; i++ {
 		go func() {
 			defer wg.Done()
 			for j := 0; j < operations; j++ {
 				key := fmt.Sprintf("key-%d", j%100)
 				cMap.Delete(key)
-				time.Sleep(time.Millisecond) // Небольшая задержка
+				time.Sleep(time.Millisecond)
 			}
 		}()
 	}
 
-	// Дополнительная горутина для проверки размера
 	done := make(chan struct{})
 	go func() {
 		maxSize := 0
@@ -859,7 +785,6 @@ func TestConcurrentMapWithTTL_ConcurrentUpdateDelete(t *testing.T) {
 	wg.Wait()
 	close(done)
 
-	// Финальная проверка
 	time.Sleep(250 * time.Millisecond)
 	if size := cMap.Len(); size > 0 {
 		t.Errorf("Expected empty map after all operations, got %d items", size)
@@ -892,14 +817,12 @@ func BenchmarkConcurrentMapWithTTL_HighLoad(b *testing.B) {
 
 	cMap := NewConcurrentMapWithTTL[string](ctx, 100*time.Millisecond, 20*time.Millisecond)
 
-	// Предварительное заполнение
 	for i := 0; i < 1000; i++ {
 		cMap.Set(fmt.Sprintf("init-key-%d", i), "value")
 	}
 
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
-		// Каждая горутина работает со своим диапазоном ключей
 		localID := rand.Int()
 		counter := 0
 
@@ -927,7 +850,6 @@ func BenchmarkConcurrentMapWithTTL_Operations(b *testing.B) {
 
 	cMap := NewConcurrentMapWithTTL[string](ctx, 100*time.Millisecond, 20*time.Millisecond)
 
-	// Предварительное заполнение для операций Get/Delete
 	for i := 0; i < 1000; i++ {
 		cMap.Set(fmt.Sprintf("init-key-%d", i), "value")
 	}
@@ -972,7 +894,6 @@ func BenchmarkConcurrentMapWithTTL_Range(b *testing.B) {
 
 	cMap := NewConcurrentMapWithTTL[string](ctx, time.Second, 100*time.Millisecond)
 
-	// Предварительное заполнение данными
 	for i := 0; i < 1000; i++ {
 		cMap.Set(fmt.Sprintf("key-%d", i), "value")
 	}

@@ -5,6 +5,8 @@ import (
 	"testing"
 )
 
+// TestGetTopHash tests the GetTopHash function to ensure that it computes correct hash values for various input strings.
+// It includes scenarios with different string lengths, special characters, unicode, repeated calls, and boundary cases.
 func TestGetTopHash(t *testing.T) {
 	tests := []struct {
 		name string
@@ -235,6 +237,7 @@ func TestGetTopHash(t *testing.T) {
 	}
 }
 
+// BenchmarkGetTopHash measures the performance of the GetTopHash function with various input key scenarios.
 func BenchmarkGetTopHash(b *testing.B) {
 	testCases := []struct {
 		name string

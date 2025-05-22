@@ -10,6 +10,7 @@ import (
 	"time"
 )
 
+// generateRandomString generates a random string of the specified size using placeholder characters.
 func generateRandomString(size int) string {
 	var buffer bytes.Buffer
 	for i := 0; i < size; i++ {
@@ -18,6 +19,7 @@ func generateRandomString(size int) string {
 	return buffer.String()
 }
 
+// BenchmarkStringCacheImplementations benchmarks various string cache implementations for performance and efficiency.
 func BenchmarkStringCacheImplementations(b *testing.B) {
 	ctx := context.Background()
 	ttl := 1 * time.Second
@@ -107,6 +109,7 @@ func BenchmarkStringCacheImplementations(b *testing.B) {
 	}
 }
 
+// BenchmarkStringParallelAccess performs parallel benchmarking tests for various cache implementations with string data.
 func BenchmarkStringParallelAccess(b *testing.B) {
 	ctx := context.Background()
 	ttl := 1 * time.Second

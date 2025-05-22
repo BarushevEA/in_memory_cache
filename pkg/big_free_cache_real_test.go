@@ -11,6 +11,16 @@ import (
 	"time"
 )
 
+// RealWorldData represents information related to financial transactions in a real-world scenario.
+// ID is the unique identifier of the record.
+// UserID indicates the user associated with the transaction.
+// TransactionID is the unique identification string for the transaction.
+// Amount denotes the monetary value of the transaction.
+// Currency is the currency code (ISO 4217) of the transaction.
+// Status represents the current state of the transaction (e.g., pending, completed, failed).
+// CreatedAt indicates when the record was created.
+// UpdatedAt indicates when the record was last updated.
+// Metadata contains additional information such as IP and tags for the record.
 type RealWorldData struct {
 	ID            int64     `json:"id"`
 	UserID        int64     `json:"user_id"`
@@ -23,6 +33,7 @@ type RealWorldData struct {
 	Metadata      Metadata  `json:"metadata"`
 }
 
+// Metadata represents additional information associated with an entity such as IP address, user agent, tags, and extra data.
 type Metadata struct {
 	IP        string            `json:"ip"`
 	UserAgent string            `json:"user_agent"`
@@ -30,6 +41,7 @@ type Metadata struct {
 	Extra     map[string]string `json:"extra"`
 }
 
+// generateRandomData generates and returns a pointer to a RealWorldData object populated with random data values.
 func generateRandomData() *RealWorldData {
 	currencies := []string{"USD", "EUR", "GBP", "JPY"}
 	statuses := []string{"pending", "completed", "failed", "cancelled"}
@@ -61,6 +73,9 @@ func generateRandomData() *RealWorldData {
 	}
 }
 
+// BenchmarkRealWorldScenario measures the performance of multiple caching implementations in various real-world scenarios.
+// It benchmarks write, read, and mixed operations using ConcurrentCache, ShardedCache, BigCache, and FreeCache.
+// The function also evaluates parallel mixed workloads with varying operation distributions for comprehensive analysis.
 func BenchmarkRealWorldScenario(b *testing.B) {
 	ctx := context.Background()
 	ttl := 5 * time.Minute

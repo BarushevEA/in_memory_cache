@@ -9,6 +9,7 @@ import (
 	"time"
 )
 
+// TestInvalidInputs validates that various edge case inputs, such as long keys or special characters, are handled correctly by caches.
 func TestInvalidInputs(t *testing.T) {
 	testCases := []struct {
 		name    string
@@ -67,6 +68,8 @@ func TestInvalidInputs(t *testing.T) {
 	}
 }
 
+// TestMemoryLeaks tests for potential memory leaks in a cache implementation by measuring memory usage before and after operations.
+// It performs intensive create, read, update, and delete operations, checks for memory usage discrepancies, and validates thresholds.
 func TestMemoryLeaks(t *testing.T) {
 	ctx := context.Background()
 	cache := NewConcurrentCache[string](ctx, time.Millisecond*100, time.Millisecond*10)
@@ -114,6 +117,7 @@ func TestMemoryLeaks(t *testing.T) {
 	}
 }
 
+// TestErrorRecovery verifies that a cache recovers correctly and continues to function after a context cancellation.
 func TestErrorRecovery(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cache := NewConcurrentCache[string](ctx, time.Second, time.Millisecond)
@@ -129,6 +133,7 @@ func TestErrorRecovery(t *testing.T) {
 	}
 }
 
+// TestDifferentTypes tests the functionality of the cache with different types: integers, structs, and struct pointers.
 func TestDifferentTypes(t *testing.T) {
 	ctx := context.Background()
 
@@ -173,6 +178,7 @@ func TestDifferentTypes(t *testing.T) {
 	})
 }
 
+// TestHighLoad performs a stress test to evaluate the cache's performance under high concurrent load scenarios.
 func TestHighLoad(t *testing.T) {
 	ctx := context.Background()
 	cache := NewShardedCache[string](ctx, time.Second, time.Millisecond)

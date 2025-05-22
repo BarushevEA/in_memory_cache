@@ -10,6 +10,7 @@ import (
 	"time"
 )
 
+// TestStruct represents a structure containing information about a user with fields for ID, name, email, timestamp, and data.
 type TestStruct struct {
 	ID        int    `json:"id"`
 	Name      string `json:"name"`
@@ -18,6 +19,7 @@ type TestStruct struct {
 	Data      []byte `json:"data"`
 }
 
+// BenchmarkCacheImplementations benchmarks multiple cache implementations for set and get operations under various conditions.
 func BenchmarkCacheImplementations(b *testing.B) {
 	ctx := context.Background()
 	ttl := 1 * time.Second
@@ -114,6 +116,7 @@ func BenchmarkCacheImplementations(b *testing.B) {
 	}
 }
 
+// BenchmarkParallelAccess benchmarks the parallel access performance of various cache implementations.
 func BenchmarkParallelAccess(b *testing.B) {
 	ctx := context.Background()
 	ttl := 1 * time.Second

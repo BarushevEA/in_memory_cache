@@ -12,25 +12,7 @@ import (
 	"time"
 )
 
-//type RealWorldData struct {
-//	ID            int64     `json:"id"`
-//	UserID        int64     `json:"user_id"`
-//	TransactionID string    `json:"transaction_id"`
-//	Amount        float64   `json:"amount"`
-//	Currency      string    `json:"currency"`
-//	Status        string    `json:"status"`
-//	CreatedAt     time.Time `json:"created_at"`
-//	UpdatedAt     time.Time `json:"updated_at"`
-//	Metadata      Metadata  `json:"metadata"`
-//}
-//
-//type Metadata struct {
-//	IP        string            `json:"ip"`
-//	UserAgent string            `json:"user_agent"`
-//	Tags      []string          `json:"tags"`
-//	Extra     map[string]string `json:"extra"`
-//}
-
+// generateRandomDataWithKey generates a RealWorldData object with a transaction ID based on the specified key length.
 func generateRandomDataWithKey(keyLength string) *RealWorldData {
 	currencies := []string{"USD", "EUR", "GBP", "JPY"}
 	statuses := []string{"pending", "completed", "failed", "cancelled"}
@@ -82,6 +64,9 @@ func generateRandomDataWithKey(keyLength string) *RealWorldData {
 	}
 }
 
+// BenchmarkRealWorldScenario_key_test benchmarks different caching methods in real-world scenarios with varied key lengths.
+// It evaluates performance on write, read, and mixed operations for ConcurrentCache, ShardedCache, BigCache, and FreeCache.
+// The tests simulate concurrent usage patterns with random data and configuration for realistic performance analysis.
 func BenchmarkRealWorldScenario_key_test(b *testing.B) {
 	keyLengths := []string{"short", "medium", "long"}
 

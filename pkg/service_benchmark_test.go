@@ -9,6 +9,9 @@ import (
 	"time"
 )
 
+// BenchmarkCache performs benchmark tests for different cache implementations by measuring Set, Get, and SetGet operations.
+// It uses the testing.B framework to evaluate cache performance under different scenarios and with varying workloads.
+// The function initializes multiple cache types and benchmarks their operations in both serial and parallel contexts.
 func BenchmarkCache(b *testing.B) {
 	ctx := context.Background()
 	caches := map[string]ICache[string]{
@@ -42,6 +45,9 @@ func BenchmarkCache(b *testing.B) {
 	}
 }
 
+// BenchmarkCache_LargeDataSet benchmarks cache implementations with a large dataset under concurrent access conditions.
+// It evaluates performance for storing, retrieving, and concurrency handling across different cache types.
+// The benchmark uses 100,000 key-value pairs and measures performance with parallel access scenarios.
 func BenchmarkCache_LargeDataSet(b *testing.B) {
 	ctx := context.Background()
 	caches := map[string]ICache[string]{
@@ -74,6 +80,7 @@ func BenchmarkCache_LargeDataSet(b *testing.B) {
 	}
 }
 
+// BenchmarkCache_StressTest performs a stress test benchmarking various cache implementations using randomized operations.
 func BenchmarkCache_StressTest(b *testing.B) {
 	ctx := context.Background()
 	caches := map[string]ICache[string]{
@@ -147,6 +154,10 @@ func BenchmarkCache_StressTest(b *testing.B) {
 	}
 }
 
+// weightedRandomChoice selects an index from the operations slice based on the provided weights and randomness.
+// It uses a specified random number generator to determine the selection probability.
+// The function assumes all weights in the operations slice are non-negative integers.
+// It returns the index of the selected operation within the slice.
 func weightedRandomChoice(operations []struct {
 	name     string
 	weight   int
@@ -167,6 +178,7 @@ func weightedRandomChoice(operations []struct {
 	return len(operations) - 1
 }
 
+// BenchmarkCache_DifferentTypes benchmarks the performance of a concurrent cache using different data types with TTL.
 func BenchmarkCache_DifferentTypes(b *testing.B) {
 	ctx := context.Background()
 
@@ -206,6 +218,8 @@ func BenchmarkCache_DifferentTypes(b *testing.B) {
 	})
 }
 
+// BenchmarkCache_MemoryLeakLongRun measures memory allocation and garbage collections of the cache over a long run.
+// It simulates concurrent cache operations including setting, getting, and deleting keys to identify potential memory leaks.
 func BenchmarkCache_MemoryLeakLongRun(b *testing.B) {
 	ctx := context.Background()
 	cache := NewConcurrentCache[string](ctx, time.Millisecond*100, time.Millisecond*10)
@@ -230,6 +244,7 @@ func BenchmarkCache_MemoryLeakLongRun(b *testing.B) {
 	b.ReportMetric(float64(m2.NumGC-m1.NumGC), "GCs")
 }
 
+// BenchmarkCache_Recovery benchmarks the recovery and performance of the cache under rapid context cancellations and re-creation.
 func BenchmarkCache_Recovery(b *testing.B) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cache := NewConcurrentCache[string](ctx, time.Second, time.Millisecond)
@@ -250,6 +265,7 @@ func BenchmarkCache_Recovery(b *testing.B) {
 	cancel()
 }
 
+// BenchmarkCache_Operations measures the performance of various cache operations in concurrent and sharded cache implementations.
 func BenchmarkCache_Operations(b *testing.B) {
 	ctx := context.Background()
 	dataSize := 100000

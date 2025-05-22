@@ -10,6 +10,7 @@ import (
 	"time"
 )
 
+// TestDynamicShardedMapWithTTL_Set tests the Set functionality of DynamicShardedMapWithTTL with TTL and ensures correctness.
 func TestDynamicShardedMapWithTTL_Set(t *testing.T) {
 	ctx := context.Background()
 	cache := NewDynamicShardedMapWithTTL[string](ctx, 10*time.Second, 2*time.Second)
@@ -34,6 +35,7 @@ func TestDynamicShardedMapWithTTL_Set(t *testing.T) {
 	}
 }
 
+// TestDynamicShardedMapWithTTL_Get tests the Get method of a DynamicShardedMapWithTTL, verifying correct value retrieval and existence checks.
 func TestDynamicShardedMapWithTTL_Get(t *testing.T) {
 	ctx := context.Background()
 	cache := NewDynamicShardedMapWithTTL[string](ctx, 10*time.Second, 2*time.Second)
@@ -59,6 +61,8 @@ func TestDynamicShardedMapWithTTL_Get(t *testing.T) {
 	}
 }
 
+// TestDynamicShardedMapWithTTL_Delete tests the Delete function in the DynamicShardedMapWithTTL for proper key removal.
+// Verifies that existing keys are removed successfully and non-existent keys do not cause errors.
 func TestDynamicShardedMapWithTTL_Delete(t *testing.T) {
 	ctx := context.Background()
 	cache := NewDynamicShardedMapWithTTL[string](ctx, 10*time.Second, 2*time.Second)
@@ -72,6 +76,7 @@ func TestDynamicShardedMapWithTTL_Delete(t *testing.T) {
 	cache.Delete("key2") // Test deleting non-existing key
 }
 
+// TestDynamicShardedMapWithTTL_Clear tests the Clear method of DynamicShardedMapWithTTL to ensure it properly clears all entries.
 func TestDynamicShardedMapWithTTL_Clear(t *testing.T) {
 	ctx := context.Background()
 	cache := NewDynamicShardedMapWithTTL[string](ctx, 10*time.Second, 2*time.Second)
@@ -84,6 +89,7 @@ func TestDynamicShardedMapWithTTL_Clear(t *testing.T) {
 	}
 }
 
+// TestDynamicShardedMapWithTTL_Len verifies the Len method's correctness in counting entries in the dynamic sharded map.
 func TestDynamicShardedMapWithTTL_Len(t *testing.T) {
 	ctx := context.Background()
 	cache := NewDynamicShardedMapWithTTL[string](ctx, 10*time.Second, 2*time.Second)
@@ -104,6 +110,7 @@ func TestDynamicShardedMapWithTTL_Len(t *testing.T) {
 	}
 }
 
+// TestDynamicShardedMapWithTTL_Range tests the Range method of the dynamic sharded map with TTL for correct iteration functionality.
 func TestDynamicShardedMapWithTTL_Range(t *testing.T) {
 	ctx := context.Background()
 	cache := NewDynamicShardedMapWithTTL[string](ctx, 10*time.Second, 2*time.Second)
@@ -124,6 +131,7 @@ func TestDynamicShardedMapWithTTL_Range(t *testing.T) {
 	}
 }
 
+// TestDynamicShardedMapWithTTL_SetOnClosedCache validates that attempting to set a key-value pair on a closed cache returns an error.
 func TestDynamicShardedMapWithTTL_SetOnClosedCache(t *testing.T) {
 	ctx := context.Background()
 	cache := NewDynamicShardedMapWithTTL[string](ctx, 10*time.Second, 2*time.Second)
@@ -135,6 +143,7 @@ func TestDynamicShardedMapWithTTL_SetOnClosedCache(t *testing.T) {
 	}
 }
 
+// TestDynamicShardedMapWithTTL_TickCollection validates the map's ability to periodically remove expired entries using TTL.
 func TestDynamicShardedMapWithTTL_TickCollection(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cache := NewDynamicShardedMapWithTTL[string](ctx, 2*time.Second, 1*time.Second)
@@ -148,6 +157,7 @@ func TestDynamicShardedMapWithTTL_TickCollection(t *testing.T) {
 	}
 }
 
+// TestNewDynamicShardedMapWithTTL_InvalidParams verifies that NewDynamicShardedMapWithTTL handles invalid parameters correctly.
 func TestNewDynamicShardedMapWithTTL_InvalidParams(t *testing.T) {
 	ctx := context.Background()
 	tests := []struct {
@@ -173,6 +183,7 @@ func TestNewDynamicShardedMapWithTTL_InvalidParams(t *testing.T) {
 	}
 }
 
+// TestDynamicShardedMapWithTTL_RangeWithBreak validates the behavior of Range with early termination using a break condition.
 func TestDynamicShardedMapWithTTL_RangeWithBreak(t *testing.T) {
 	ctx := context.Background()
 	cache := NewDynamicShardedMapWithTTL[string](ctx, 10*time.Second, 2*time.Second)
@@ -195,6 +206,7 @@ func TestDynamicShardedMapWithTTL_RangeWithBreak(t *testing.T) {
 	}
 }
 
+// TestDynamicShardedMapWithTTL_RangeOnClosedCache verifies that the Range method returns an error when called on a closed cache.
 func TestDynamicShardedMapWithTTL_RangeOnClosedCache(t *testing.T) {
 	ctx := context.Background()
 	cache := NewDynamicShardedMapWithTTL[string](ctx, 10*time.Second, 2*time.Second)
@@ -211,6 +223,7 @@ func TestDynamicShardedMapWithTTL_RangeOnClosedCache(t *testing.T) {
 	}
 }
 
+// TestDynamicShardedMapWithTTL_GetOnClosedCache verifies that calling Get on a cache after it is cleared returns zero value and false.
 func TestDynamicShardedMapWithTTL_GetOnClosedCache(t *testing.T) {
 	ctx := context.Background()
 	cache := NewDynamicShardedMapWithTTL[string](ctx, 10*time.Second, 2*time.Second)
@@ -224,6 +237,8 @@ func TestDynamicShardedMapWithTTL_GetOnClosedCache(t *testing.T) {
 	}
 }
 
+// TestDynamicShardedMapWithTTL_TTLExpiration validates the TTL-based expiration functionality of the dynamic sharded map.
+// Ensures that values are retrievable before the TTL expires and removed after the TTL duration elapses.
 func TestDynamicShardedMapWithTTL_TTLExpiration(t *testing.T) {
 	ctx := context.Background()
 	ttl := 2 * time.Second
@@ -255,6 +270,8 @@ func TestDynamicShardedMapWithTTL_TTLExpiration(t *testing.T) {
 	t.Errorf("Value should be removed after TTL expiration")
 }
 
+// TestDynamicShardedMapWithTTL_ConcurrentAccess tests concurrent access on DynamicShardedMapWithTTL to validate thread safety and TTL behavior.
+// It spawns multiple goroutines to perform concurrent Set, Get, and Delete operations with a configured TTL duration.
 func TestDynamicShardedMapWithTTL_ConcurrentAccess(t *testing.T) {
 	ctx := context.Background()
 	cache := NewDynamicShardedMapWithTTL[string](ctx, 10*time.Second, 2*time.Second)
@@ -287,6 +304,7 @@ func TestDynamicShardedMapWithTTL_ConcurrentAccess(t *testing.T) {
 	wg.Wait()
 }
 
+// TestDynamicShardedMapWithTTL_ContextCancellation tests cancellation behavior of context in DynamicShardedMapWithTTL with TTL.
 func TestDynamicShardedMapWithTTL_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cache := NewDynamicShardedMapWithTTL[string](ctx, 10*time.Second, 2*time.Second)
@@ -308,6 +326,7 @@ func TestDynamicShardedMapWithTTL_ContextCancellation(t *testing.T) {
 	}
 }
 
+// TestDynamicShardedMapWithTTL_EmptyKeysAndValues validates handling of empty keys and values in a sharded map with TTL.
 func TestDynamicShardedMapWithTTL_EmptyKeysAndValues(t *testing.T) {
 	ctx := context.Background()
 	cache := NewDynamicShardedMapWithTTL[string](ctx, 10*time.Second, 2*time.Second)
@@ -329,6 +348,8 @@ func TestDynamicShardedMapWithTTL_EmptyKeysAndValues(t *testing.T) {
 	}
 }
 
+// TestDynamicShardedMapWithTTL_MultipleShards verifies the correct functionality of dynamic sharded map with TTL using multiple shards.
+// Ensures keys are set correctly, can be retrieved with their values, and handles multiple keys across shards properly.
 func TestDynamicShardedMapWithTTL_MultipleShards(t *testing.T) {
 	ctx := context.Background()
 	cache := NewDynamicShardedMapWithTTL[string](ctx, 10*time.Second, 2*time.Second)
@@ -354,6 +375,7 @@ func TestDynamicShardedMapWithTTL_MultipleShards(t *testing.T) {
 	}
 }
 
+// BenchmarkDynamicShardedMapWithTTL_SetGet benchmarks the Set and Get operations of the dynamic sharded map with TTL in parallel.
 func BenchmarkDynamicShardedMapWithTTL_SetGet(b *testing.B) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -374,6 +396,8 @@ func BenchmarkDynamicShardedMapWithTTL_SetGet(b *testing.B) {
 	})
 }
 
+// BenchmarkDynamicShardedMapWithTTL_HighLoad benchmarks the performance of DynamicShardedMapWithTTL under high-concurrency scenarios.
+// It performs random Set, Get, and Delete operations with pre-populated keys while testing under parallel workloads.
 func BenchmarkDynamicShardedMapWithTTL_HighLoad(b *testing.B) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -404,6 +428,7 @@ func BenchmarkDynamicShardedMapWithTTL_HighLoad(b *testing.B) {
 	})
 }
 
+// BenchmarkDynamicShardedMapWithTTL_Operations evaluates the performance of Set, Get, and Delete operations on a sharded cache with TTL.
 func BenchmarkDynamicShardedMapWithTTL_Operations(b *testing.B) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -448,6 +473,7 @@ func BenchmarkDynamicShardedMapWithTTL_Operations(b *testing.B) {
 	})
 }
 
+// BenchmarkDynamicShardedMapWithTTL_Range benchmarks the Range method of DynamicShardedMapWithTTL with 1000 pre-set keys.
 func BenchmarkDynamicShardedMapWithTTL_Range(b *testing.B) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
