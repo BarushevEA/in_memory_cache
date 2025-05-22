@@ -402,3 +402,102 @@ func TestMapNode_Clear(t *testing.T) {
 		t.Run(tc.name, tc.test)
 	}
 }
+
+func TestMapNode_Metrics(t *testing.T) {
+	t.Run("should correctly track creation time", func(t *testing.T) {
+		// Arrange
+		beforeCreate := time.Now()
+		node := NewMapNode("test")
+		afterCreate := time.Now()
+
+		// Act
+		_, createdAt, _, _ := node.GetDataWithMetrics()
+
+		// Assert
+		assert.True(t, createdAt.After(beforeCreate) || createdAt.Equal(beforeCreate))
+		assert.True(t, createdAt.Before(afterCreate) || createdAt.Equal(afterCreate))
+	})
+
+	t.Run("should correctly count get operations", func(t *testing.T) {
+		// Arrange
+		node := NewMapNode("test")
+		expectedGetCount := uint32(5)
+
+		// Act
+		for i := uint32(0); i < expectedGetCount; i++ {
+			node.GetData()
+		}
+		_, _, _, actualGetCount := node.GetDataWithMetrics()
+
+		// Assert
+		assert.Equal(t, expectedGetCount, actualGetCount)
+	})
+
+	t.Run("should correctly count set operations", func(t *testing.T) {
+		// Arrange
+		node := NewMapNode("initial")
+		expectedSetCount := uint32(3)
+
+		// Act
+		for i := uint32(0); i < expectedSetCount; i++ {
+			node.SetData("new value")
+		}
+		_, _, actualSetCount, _ := node.GetDataWithMetrics()
+
+		// Assert
+		assert.Equal(t, expectedSetCount, actualSetCount)
+	})
+
+	t.Run("should maintain separate get and set counts", func(t *testing.T) {
+		// Arrange
+		node := NewMapNode("test")
+		expectedGetCount := uint32(3)
+		expectedSetCount := uint32(2)
+
+		// Act
+		for i := uint32(0); i < expectedGetCount; i++ {
+			node.GetData()
+		}
+		for i := uint32(0); i < expectedSetCount; i++ {
+			node.SetData("new value")
+		}
+		_, _, setCount, getCount := node.GetDataWithMetrics()
+
+		// Assert
+		assert.Equal(t, expectedSetCount, setCount)
+		assert.Equal(t, expectedGetCount, getCount)
+	})
+
+	t.Run("should reset metrics on Clear", func(t *testing.T) {
+		// Arrange
+		node := NewMapNode("test")
+		node.GetData()
+		node.SetData("new value")
+
+		// Act
+		node.Clear()
+		_, createdAt, setCount, getCount := node.GetDataWithMetrics()
+
+		// Assert
+		assert.Equal(t, uint32(0), setCount)
+		assert.Equal(t, uint32(0), getCount)
+		assert.False(t, createdAt.IsZero())
+	})
+
+	t.Run("should preserve metrics across data updates", func(t *testing.T) {
+		// Arrange
+		node := NewMapNode("initial")
+		time.Sleep(time.Millisecond) // Ensure some time passes
+
+		// Act
+		node.GetData()
+		node.SetData("new value")
+		data, createdAt, setCount, getCount := node.GetDataWithMetrics()
+
+		// Assert
+		assert.Equal(t, "new value", data)
+		assert.True(t, createdAt.Before(time.Now()))
+		assert.Equal(t, uint32(1), setCount)
+		assert.Equal(t, uint32(1), getCount)
+	})
+}

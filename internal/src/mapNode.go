@@ -77,6 +77,8 @@ func (node *MapNode[T]) Clear() {
 	node.ttl = 0
 	node.ttlDecrement = 0
 	node.data = *new(T)
+	node.setCount = 0
+	node.getCount = 0
 }
 
 // GetMetrics returns the creation time, set count, and get count for the MapNode instance.
