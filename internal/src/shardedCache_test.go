@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"math/rand/v2"
 	"sync"
 	"testing"
@@ -490,4 +492,180 @@ func BenchmarkDynamicShardedMapWithTTL_Range(b *testing.B) {
 			return true
 		})
 	}
+}
+
+func TestDynamicShardedMapWithTTL_Metrics(t *testing.T) {
+	t.Run("should track metrics across shards", func(t *testing.T) {
+		// Arrange
+		ctx := context.Background()
+		cache := NewDynamicShardedMapWithTTL[string](ctx, 5*time.Second, 1*time.Second)
+
+		beforeCreate := time.Now()
+		err := cache.Set("key1", "value1")
+		afterCreate := time.Now()
+		require.NoError(t, err)
+
+		// Act
+		value, createdAt, setCount, getCount, exists := cache.GetNodeValueWithMetrics("key1")
+
+		// Assert
+		assert.True(t, exists)
+		assert.Equal(t, "value1", value)
+		assert.True(t, createdAt.After(beforeCreate) || createdAt.Equal(beforeCreate))
+		assert.True(t, createdAt.Before(afterCreate) || createdAt.Equal(afterCreate))
+		assert.Equal(t, uint32(1), setCount)
+		assert.Equal(t, uint32(0), getCount)
+	})
+
+	t.Run("should correctly count operations for multiple keys", func(t *testing.T) {
+		// Arrange
+		ctx := context.Background()
+		cache := NewDynamicShardedMapWithTTL[string](ctx, 5*time.Second, 1*time.Second)
+
+		// Act
+		err := cache.Set("key1", "value1")
+		require.NoError(t, err)
+		err = cache.Set("key2", "value2")
+		require.NoError(t, err)
+
+		_, _ = cache.Get("key1")
+		_, _ = cache.Get("key1")
+		_, _ = cache.Get("key2")
+
+		// Assert
+		_, _, setCount1, getCount1, _ := cache.GetNodeValueWithMetrics("key1")
+		_, _, setCount2, getCount2, _ := cache.GetNodeValueWithMetrics("key2")
+
+		assert.Equal(t, uint32(1), setCount1)
+		assert.Equal(t, uint32(2), getCount1)
+		assert.Equal(t, uint32(1), setCount2)
+		assert.Equal(t, uint32(1), getCount2)
+	})
+
+	t.Run("should maintain metrics when using RangeWithMetrics", func(t *testing.T) {
+		// Arrange
+		ctx := context.Background()
+		cache := NewDynamicShardedMapWithTTL[string](ctx, 5*time.Second, 1*time.Second)
+
+		err := cache.Set("key1", "value1")
+		require.NoError(t, err)
+		_, _ = cache.Get("key1")
+
+		collected := make(map[string]struct {
+			value     string
+			setCount  uint32
+			getCount  uint32
+			createdAt time.Time
+		})
+
+		// Act
+		err = cache.RangeWithMetrics(func(key string, value string, createdAt time.Time, setCount uint32, getCount uint32) bool {
+			collected[key] = struct {
+				value     string
+				setCount  uint32
+				getCount  uint32
+				createdAt time.Time
+			}{
+				value:     value,
+				setCount:  setCount,
+				getCount:  getCount,
+				createdAt: createdAt,
+			}
+			return true
+		})
+
+		// Assert
+		require.NoError(t, err)
+		assert.Len(t, collected, 1)
+		metrics := collected["key1"]
+		assert.Equal(t, "value1", metrics.value)
+		assert.Equal(t, uint32(1), metrics.setCount)
+		assert.Equal(t, uint32(1), metrics.getCount)
+		assert.False(t, metrics.createdAt.IsZero())
+	})
+
+	t.Run("should handle metrics for non-existent keys", func(t *testing.T) {
+		// Arrange
+		ctx := context.Background()
+		cache := NewDynamicShardedMapWithTTL[string](ctx, 5*time.Second, 1*time.Second)
+
+		// Act
+		value, createdAt, setCount, getCount, exists := cache.GetNodeValueWithMetrics("non-existent")
+
+		// Assert
+		assert.False(t, exists)
+		assert.Empty(t, value)
+		assert.True(t, createdAt.IsZero())
+		assert.Equal(t, uint32(0), setCount)
+		assert.Equal(t, uint32(0), getCount)
+	})
+
+	t.Run("should reset metrics on Clear", func(t *testing.T) {
+		// Arrange
+		ctx := context.Background()
+		cache := NewDynamicShardedMapWithTTL[string](ctx, 5*time.Second, 1*time.Second)
+
+		err := cache.Set("key1", "value1")
+		require.NoError(t, err)
+		_, _ = cache.Get("key1")
+
+		// Act
+		cache.Clear()
+		value, createdAt, setCount, getCount, exists := cache.GetNodeValueWithMetrics("key1")
+
+		// Assert
+		assert.False(t, exists)
+		assert.Empty(t, value)
+		assert.True(t, createdAt.IsZero())
+		assert.Equal(t, uint32(0), setCount)
+		assert.Equal(t, uint32(0), getCount)
+	})
+
+	t.Run("should handle concurrent metric operations", func(t *testing.T) {
+		// Arrange
+		ctx := context.Background()
+		cache := NewDynamicShardedMapWithTTL[string](ctx, 5*time.Second, 1*time.Second)
+		const goroutines = 10
+		const operationsPerGoroutine = 50
+
+		var wg sync.WaitGroup
+		wg.Add(goroutines)
+
+		for i := 0; i < goroutines; i++ {
+			key := fmt.Sprintf("key%d", i)
+			err := cache.Set(key, "initial")
+			require.NoError(t, err)
+		}
+
+		// Act
+		for i := 0; i < goroutines; i++ {
+			go func(routineID int) {
+				defer wg.Done()
+				key := fmt.Sprintf("key%d", routineID)
+
+				for j := 0; j < operationsPerGoroutine; j++ {
+					if j%2 == 0 {
+						err := cache.Set(key, fmt.Sprintf("value%d-%d", routineID, j))
+						require.NoError(t, err)
+					} else {
+						_, ok := cache.Get(key)
+						require.True(t, ok)
+					}
+					time.Sleep(time.Microsecond)
+				}
+			}(i)
+		}
+
+		wg.Wait()
+
+		// Assert
+		for i := 0; i < goroutines; i++ {
+			key := fmt.Sprintf("key%d", i)
+			_, _, setCount, getCount, exists := cache.GetNodeValueWithMetrics(key)
+			assert.True(t, exists)
+			expectedOps := uint32(operationsPerGoroutine / 2)
+			assert.GreaterOrEqual(t, setCount, expectedOps)
+			assert.GreaterOrEqual(t, getCount, expectedOps)
+		}
+	})
 }
