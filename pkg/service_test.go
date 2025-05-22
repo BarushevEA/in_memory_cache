@@ -3,6 +3,8 @@ package pkg
 import (
 	"context"
 	"fmt"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"runtime"
 	"sync"
 	"testing"
@@ -211,4 +213,153 @@ func TestHighLoad(t *testing.T) {
 
 	t.Logf("High load test completed in %v", duration)
 	t.Logf("Operations per second: %v", float64(goroutines*operationsPerGoroutine)/duration.Seconds())
+}
+
+func TestCache_Metrics(t *testing.T) {
+	testCases := []struct {
+		name      string
+		createFn  func(context.Context, time.Duration, time.Duration) ICache[string]
+		cacheType string
+	}{
+		{
+			name:      "ConcurrentCache",
+			createFn:  NewConcurrentCache[string],
+			cacheType: "concurrent",
+		},
+		{
+			name:      "ShardedCache",
+			createFn:  NewShardedCache[string],
+			cacheType: "sharded",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Run("should track basic metrics", func(t *testing.T) {
+				// Arrange
+				ctx := context.Background()
+				cache := tc.createFn(ctx, 5*time.Second, 1*time.Second)
+
+				// Act
+				beforeCreate := time.Now()
+				err := cache.Set("test-key", "test-value")
+				afterCreate := time.Now()
+				require.NoError(t, err)
+
+				value, createdAt, setCount, getCount, exists := cache.GetNodeValueWithMetrics("test-key")
+
+				// Assert
+				assert.True(t, exists)
+				assert.Equal(t, "test-value", value)
+				assert.True(t, createdAt.After(beforeCreate) || createdAt.Equal(beforeCreate))
+				assert.True(t, createdAt.Before(afterCreate) || createdAt.Equal(afterCreate))
+				assert.Equal(t, uint32(1), setCount)
+				assert.Equal(t, uint32(0), getCount)
+			})
+
+			t.Run("should track multiple operations", func(t *testing.T) {
+				// Arrange
+				ctx := context.Background()
+				cache := tc.createFn(ctx, 5*time.Second, 1*time.Second)
+
+				// Act
+				err := cache.Set("key1", "value1")
+				require.NoError(t, err)
+				_, _ = cache.Get("key1")
+				_, _ = cache.Get("key1")
+
+				err = cache.Set("key1", "value2")
+				require.NoError(t, err)
+
+				// Assert
+				_, _, setCount, getCount, exists := cache.GetNodeValueWithMetrics("key1")
+				assert.True(t, exists)
+				assert.Equal(t, uint32(2), setCount)
+				assert.Equal(t, uint32(2), getCount)
+			})
+
+			t.Run("should correctly iterate with metrics", func(t *testing.T) {
+				// Arrange
+				ctx := context.Background()
+				cache := tc.createFn(ctx, 5*time.Second, 1*time.Second)
+
+				keys := []string{"key1", "key2", "key3"}
+				for _, key := range keys {
+					err := cache.Set(key, "value-"+key)
+					require.NoError(t, err)
+					_, _ = cache.Get(key) // One get operation per key
+				}
+
+				// Act
+				collected := make(map[string]struct {
+					value     string
+					setCount  uint32
+					getCount  uint32
+					createdAt time.Time
+				})
+
+				err := cache.RangeWithMetrics(func(key string, value string, createdAt time.Time, setCount uint32, getCount uint32) bool {
+					collected[key] = struct {
+						value     string
+						setCount  uint32
+						getCount  uint32
+						createdAt time.Time
+					}{
+						value:     value,
+						setCount:  setCount,
+						getCount:  getCount,
+						createdAt: createdAt,
+					}
+					return true
+				})
+
+				// Assert
+				require.NoError(t, err)
+				assert.Len(t, collected, 3)
+				for _, key := range keys {
+					metrics, exists := collected[key]
+					assert.True(t, exists)
+					assert.Equal(t, "value-"+key, metrics.value)
+					assert.Equal(t, uint32(1), metrics.setCount)
+					assert.Equal(t, uint32(1), metrics.getCount)
+					assert.False(t, metrics.createdAt.IsZero())
+				}
+			})
+
+			t.Run("should handle metrics after Clear", func(t *testing.T) {
+				// Arrange
+				ctx := context.Background()
+				cache := tc.createFn(ctx, 5*time.Second, 1*time.Second)
+
+				err := cache.Set("test-key", "test-value")
+				require.NoError(t, err)
+				_, _ = cache.Get("test-key")
+
+				// Act
+				cache.Clear()
+
+				// Assert
+				value, createdAt, setCount, getCount, exists := cache.GetNodeValueWithMetrics("test-key")
+				assert.False(t, exists)
+				assert.Empty(t, value)
+				assert.True(t, createdAt.IsZero())
+				assert.Equal(t, uint32(0), setCount)
+				assert.Equal(t, uint32(0), getCount)
+			})
+
+			t.Run("should handle non-existent keys", func(t *testing.T) {
+				// Arrange
+				ctx := context.Background()
+				cache := tc.createFn(ctx, 5*time.Second, 1*time.Second)
+
+				// Act & Assert
+				value, createdAt, setCount, getCount, exists := cache.GetNodeValueWithMetrics("non-existent")
+				assert.False(t, exists)
+				assert.Empty(t, value)
+				assert.True(t, createdAt.IsZero())
+				assert.Equal(t, uint32(0), setCount)
+				assert.Equal(t, uint32(0), getCount)
+			})
+		})
+	}
 }
