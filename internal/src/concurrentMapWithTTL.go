@@ -24,6 +24,11 @@ type ConcurrentMapWithTTL[T any] struct {
 	maxKeysForDeleteCount int
 }
 
+type rangeEntry[T any] struct {
+	key  string
+	node IMapNode[T]
+}
+
 // NewConcurrentMapWithTTL creates a new concurrent map with TTL support and starts a background TTL management goroutine.
 func NewConcurrentMapWithTTL[T any](ctx context.Context, ttl, ttlDecrement time.Duration) ICacheInMemory[T] {
 	cMap := &ConcurrentMapWithTTL[T]{}
@@ -50,14 +55,18 @@ func (cMap *ConcurrentMapWithTTL[T]) Range(callback func(key string, value T) bo
 		return errors.New("ConcurrentMapWithTTL.Range ERROR: cannot perform operation on closed cache")
 	}
 
+	entries := make([]rangeEntry[T], 0, len(cMap.data))
 	cMap.RLock()
 	for key, node := range cMap.data {
-		if !callback(key, node.GetData()) {
-			cMap.RUnlock()
+		entries = append(entries, rangeEntry[T]{key: key, node: node})
+	}
+	cMap.RUnlock()
+
+	for _, entry := range entries {
+		if !callback(entry.key, entry.node.GetData()) {
 			return nil
 		}
 	}
-	cMap.RUnlock()
 
 	return nil
 }
@@ -67,15 +76,19 @@ func (cMap *ConcurrentMapWithTTL[T]) RangeWithMetrics(callback func(key string, 
 		return errors.New("ConcurrentMapWithTTL.Range ERROR: cannot perform operation on closed cache")
 	}
 
+	entries := make([]rangeEntry[T], 0, len(cMap.data))
 	cMap.RLock()
 	for key, node := range cMap.data {
-		value, createdAt, setCount, getCount := node.GetDataWithMetrics()
-		if !callback(key, value, createdAt, setCount, getCount) {
-			cMap.RUnlock()
+		entries = append(entries, rangeEntry[T]{key: key, node: node})
+	}
+	cMap.RUnlock()
+
+	for _, entry := range entries {
+		value, createdAt, setCount, getCount := entry.node.GetDataWithMetrics()
+		if !callback(entry.key, value, createdAt, setCount, getCount) {
 			return nil
 		}
 	}
-	cMap.RUnlock()
 
 	return nil
 }
