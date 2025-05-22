@@ -17,12 +17,19 @@ type ConcurrentMapWithTTL[T any] struct {
 	ttlDecrement time.Duration
 	isClosed     bool
 	tickerOnce   sync.Once
+
+	keysForDelete         []string
+	keysForDeleteSync     sync.Mutex
+	maxKeysForDeleteUsage int
+	maxKeysForDeleteCount int
 }
 
 // NewConcurrentMapWithTTL creates a new concurrent map with TTL support and starts a background TTL management goroutine.
 func NewConcurrentMapWithTTL[T any](ctx context.Context, ttl, ttlDecrement time.Duration) ICacheInMemory[T] {
 	cMap := &ConcurrentMapWithTTL[T]{}
 	cMap.data = make(map[string]IMapNode[T])
+	cMap.maxKeysForDeleteUsage = 10000
+	cMap.keysForDelete = make([]string, 100, cMap.maxKeysForDeleteUsage)
 	cMap.ctx, cMap.cancel = context.WithCancel(ctx)
 	cMap.ttl = ttl
 	cMap.ttlDecrement = ttlDecrement
@@ -72,7 +79,10 @@ func (cMap *ConcurrentMapWithTTL[T]) Set(key string, value T) error {
 	newNode.SetTTL(cMap.ttl)
 	newNode.SetTTLDecrement(cMap.ttlDecrement)
 	newNode.SetRemoveCallback(func() {
-		go cMap.Delete(key)
+		cMap.keysForDeleteSync.Lock()
+		cMap.keysForDelete = append(cMap.keysForDelete, key)
+		cMap.maxKeysForDeleteCount++
+		cMap.keysForDeleteSync.Unlock()
 	})
 
 	cMap.data[key] = newNode
@@ -181,6 +191,21 @@ func (cMap *ConcurrentMapWithTTL[T]) tickCollection() {
 
 			for i := 0; i < len(nodes); i++ {
 				nodes[i].Tick()
+			}
+
+			if len(cMap.keysForDelete) > 0 {
+				go func() {
+					cMap.keysForDeleteSync.Lock()
+					for _, key := range cMap.keysForDelete {
+						cMap.Delete(key)
+					}
+					cMap.keysForDelete = cMap.keysForDelete[:0]
+					if cMap.maxKeysForDeleteCount > cMap.maxKeysForDeleteUsage {
+						cMap.maxKeysForDeleteCount = 0
+						cMap.keysForDelete = make([]string, 100, 10000)
+					}
+					cMap.keysForDeleteSync.Unlock()
+				}()
 			}
 
 			nodes = nil
