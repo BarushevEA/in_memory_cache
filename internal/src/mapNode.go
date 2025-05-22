@@ -80,6 +80,6 @@ func (node *MapNode[T]) Clear() {
 }
 
 // GetMetrics returns the creation time, set count, and get count for the MapNode instance.
-func (node *MapNode[T]) GetMetrics() (time.Time, uint32, uint32) {
-	return node.createdAt, node.setCount, node.getCount
+func (node *MapNode[T]) GetDataWithMetrics() (T, time.Time, uint32, uint32) {
+	return node.data, node.createdAt, node.setCount, node.getCount
 }

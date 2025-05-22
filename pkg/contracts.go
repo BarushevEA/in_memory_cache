@@ -1,5 +1,7 @@
 package pkg
 
+import "time"
+
 // ICache defines a generic caching interface supporting basic operations for managing key-value pairs.
 // It provides methods for adding, retrieving, deleting, and clearing cache entries.
 // The interface supports iteration over stored entries using a callback function.
@@ -13,4 +15,5 @@ type ICache[T any] interface {
 
 	Len() int
 	Range(func(key string, value T) bool) error
+	GetNodeValueWithMetrics(key string) (T, time.Time, uint32, uint32, bool)
 }

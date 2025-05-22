@@ -154,21 +154,22 @@ func (m *DynamicShardedMapWithTTL[T]) Range(callback func(key string, value T) b
 	return nil
 }
 
-func (m *DynamicShardedMapWithTTL[T]) GetNodeMetrics(key string) (time.Time, uint32, uint32, bool) {
+func (m *DynamicShardedMapWithTTL[T]) GetNodeValueWithMetrics(key string) (T, time.Time, uint32, uint32, bool) {
 	var (
 		timeCreated time.Time
 		setCount    uint32
 		getCount    uint32
 		exists      bool
+		value       T
 	)
 
 	if m.isClosed.Load() {
-		return timeCreated, setCount, getCount, exists
+		return value, timeCreated, setCount, getCount, exists
 	}
 
 	hash := utils.GetTopHash(key)
 	shard := m.getShard(hash)
 
-	timeCreated, setCount, getCount, exists = shard.GetNodeMetrics(key)
-	return timeCreated, setCount, getCount, exists
+	value, timeCreated, setCount, getCount, exists = shard.GetNodeValueWithMetrics(key)
+	return value, timeCreated, setCount, getCount, exists
 }

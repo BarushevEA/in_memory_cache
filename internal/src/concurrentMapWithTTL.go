@@ -214,15 +214,16 @@ func (cMap *ConcurrentMapWithTTL[T]) tickCollection() {
 	}
 }
 
-func (cMap *ConcurrentMapWithTTL[T]) GetNodeMetrics(key string) (time.Time, uint32, uint32, bool) {
+func (cMap *ConcurrentMapWithTTL[T]) GetNodeValueWithMetrics(key string) (T, time.Time, uint32, uint32, bool) {
 	var (
 		timeCreated time.Time
 		setCount    uint32
 		getCount    uint32
+		value       T
 	)
 
 	if cMap.isClosed {
-		return timeCreated, setCount, getCount, false
+		return value, timeCreated, setCount, getCount, false
 	}
 
 	cMap.RLock()
@@ -230,10 +231,10 @@ func (cMap *ConcurrentMapWithTTL[T]) GetNodeMetrics(key string) (time.Time, uint
 	cMap.RUnlock()
 
 	if !exists {
-		return timeCreated, setCount, getCount, false
+		return value, timeCreated, setCount, getCount, false
 	}
 
-	timeCreated, setCount, getCount = node.GetMetrics()
+	value, timeCreated, setCount, getCount = node.GetDataWithMetrics()
 
-	return timeCreated, setCount, getCount, true
+	return value, timeCreated, setCount, getCount, true
 }
