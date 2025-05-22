@@ -10,6 +10,13 @@ import (
 	"unsafe"
 )
 
+// DynamicShardedMapWithTTL is a generic, sharded, in-memory cache with a configurable TTL for entries.
+// Uses 256 shards for concurrency and stores data with automatic expiration based on the TTL settings.
+// Allows operations like Set, Get, Delete, Clear, Len, and Range.
+// Provides thread-safe access and automatic TTL decrement on entries to remove expired data.
+// Each shard is lazily initialized for efficiency based on usage.
+// Maintains internal synchronization to safely handle concurrent operations.
+// Once closed, the map discards all shards and prevents further operations.
 type DynamicShardedMapWithTTL[T any] struct {
 	shards    [256]*ICacheInMemory[T]
 	ctx       context.Context
@@ -20,6 +27,11 @@ type DynamicShardedMapWithTTL[T any] struct {
 	initOnce  sync.Once
 }
 
+// NewDynamicShardedMapWithTTL initializes a sharded in-memory cache with TTL and decrement intervals for cleanup operations.
+// ctx is the context that controls the lifetime of the cache and its internal operations.
+// ttl specifies the time to live for cache entries before they expire.
+// decrement specifies the frequency of cleanup checks for expired keys, must be less than or equal to ttl.
+// Returns an implementation of ICacheInMemory[T].
 func NewDynamicShardedMapWithTTL[T any](ctx context.Context, ttl, decrement time.Duration) ICacheInMemory[T] {
 	if ttl <= 0 || decrement <= 0 || decrement > ttl {
 		ttl = 5 * time.Second
@@ -37,6 +49,7 @@ func NewDynamicShardedMapWithTTL[T any](ctx context.Context, ttl, decrement time
 	return m
 }
 
+// getShard returns the shard corresponding to the given hash, creating it if it doesn't already exist.
 func (m *DynamicShardedMapWithTTL[T]) getShard(hash uint8) ICacheInMemory[T] {
 	shard := (*ICacheInMemory[T])(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&m.shards[hash]))))
 	if shard != nil {
@@ -60,6 +73,7 @@ func (m *DynamicShardedMapWithTTL[T]) getShard(hash uint8) ICacheInMemory[T] {
 	return newShard
 }
 
+// Set inserts or updates a key-value pair in the dynamic sharded map. Returns an error if the map is closed.
 func (m *DynamicShardedMapWithTTL[T]) Set(key string, value T) error {
 	if m.isClosed.Load() {
 		return errors.New("cache is closed")
@@ -70,6 +84,7 @@ func (m *DynamicShardedMapWithTTL[T]) Set(key string, value T) error {
 	return shard.Set(key, value)
 }
 
+// Get retrieves the value associated with the given key from the dynamic sharded map and its existence status.
 func (m *DynamicShardedMapWithTTL[T]) Get(key string) (T, bool) {
 	if m.isClosed.Load() {
 		return *new(T), false
@@ -80,6 +95,7 @@ func (m *DynamicShardedMapWithTTL[T]) Get(key string) (T, bool) {
 	return shard.Get(key)
 }
 
+// Delete removes an entry with the specified key from the map if it exists and the map is not closed.
 func (m *DynamicShardedMapWithTTL[T]) Delete(key string) {
 	if m.isClosed.Load() {
 		return
@@ -91,6 +107,7 @@ func (m *DynamicShardedMapWithTTL[T]) Delete(key string) {
 	}
 }
 
+// Clear removes all data from the map, clears underlying shards, and cancels the internal context, marking the map as closed.
 func (m *DynamicShardedMapWithTTL[T]) Clear() {
 	if !m.isClosed.CompareAndSwap(false, true) {
 		return
@@ -105,6 +122,7 @@ func (m *DynamicShardedMapWithTTL[T]) Clear() {
 	m.cancel()
 }
 
+// Len returns the total number of entries across all shards in the map or 0 if the map is closed.
 func (m *DynamicShardedMapWithTTL[T]) Len() int {
 	if m.isClosed.Load() {
 		return 0
@@ -119,6 +137,8 @@ func (m *DynamicShardedMapWithTTL[T]) Len() int {
 	return total
 }
 
+// Range iterates over all key-value pairs in the map, applying the provided callback function.
+// Returns an error if the map is closed or if an error occurs during shard iteration.
 func (m *DynamicShardedMapWithTTL[T]) Range(callback func(key string, value T) bool) error {
 	if m.isClosed.Load() {
 		return errors.New("cache is closed")
