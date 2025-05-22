@@ -62,6 +62,24 @@ func (cMap *ConcurrentMapWithTTL[T]) Range(callback func(key string, value T) bo
 	return nil
 }
 
+func (cMap *ConcurrentMapWithTTL[T]) RangeWithMetrics(callback func(key string, value T, createdAt time.Time, setCount uint32, getCount uint32) bool) error {
+	if cMap.isClosed {
+		return errors.New("ConcurrentMapWithTTL.Range ERROR: cannot perform operation on closed cache")
+	}
+
+	cMap.RLock()
+	for key, node := range cMap.data {
+		value, createdAt, setCount, getCount := node.GetDataWithMetrics()
+		if !callback(key, value, createdAt, setCount, getCount) {
+			cMap.RUnlock()
+			return nil
+		}
+	}
+	cMap.RUnlock()
+
+	return nil
+}
+
 // Set adds or updates a key-value pair in the map, initializing a new node if the key does not exist.
 func (cMap *ConcurrentMapWithTTL[T]) Set(key string, value T) error {
 	if cMap.isClosed {

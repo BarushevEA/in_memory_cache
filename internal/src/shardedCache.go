@@ -154,6 +154,21 @@ func (m *DynamicShardedMapWithTTL[T]) Range(callback func(key string, value T) b
 	return nil
 }
 
+func (m *DynamicShardedMapWithTTL[T]) RangeWithMetrics(callback func(key string, value T, createdAt time.Time, setCount uint32, getCount uint32) bool) error {
+	if m.isClosed.Load() {
+		return errors.New("cache is closed")
+	}
+
+	for i := range m.shards {
+		if shard := (*ICacheInMemory[T])(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&m.shards[i])))); shard != nil {
+			if err := (*shard).RangeWithMetrics(callback); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func (m *DynamicShardedMapWithTTL[T]) GetNodeValueWithMetrics(key string) (T, time.Time, uint32, uint32, bool) {
 	var (
 		timeCreated time.Time

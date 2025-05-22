@@ -36,5 +36,6 @@ type ICacheInMemory[T any] interface {
 
 	Len() int
 	Range(func(key string, value T) bool) error
+	RangeWithMetrics(callback func(key string, value T, createdAt time.Time, setCount uint32, getCount uint32) bool) error
 	GetNodeValueWithMetrics(key string) (T, time.Time, uint32, uint32, bool)
 }
