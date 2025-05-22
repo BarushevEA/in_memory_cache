@@ -55,10 +55,10 @@ func (cMap *ConcurrentMapWithTTL[T]) Range(callback func(key string, value T) bo
 		return errors.New("ConcurrentMapWithTTL.Range ERROR: cannot perform operation on closed cache")
 	}
 
-	entries := make([]rangeEntry[T], 0, len(cMap.data))
+	entries := make([]*rangeEntry[T], 0, len(cMap.data))
 	cMap.RLock()
 	for key, node := range cMap.data {
-		entries = append(entries, rangeEntry[T]{key: key, node: node})
+		entries = append(entries, &rangeEntry[T]{key: key, node: node})
 	}
 	cMap.RUnlock()
 
@@ -68,6 +68,8 @@ func (cMap *ConcurrentMapWithTTL[T]) Range(callback func(key string, value T) bo
 		}
 	}
 
+	entries = nil
+
 	return nil
 }
 
@@ -76,10 +78,10 @@ func (cMap *ConcurrentMapWithTTL[T]) RangeWithMetrics(callback func(key string, 
 		return errors.New("ConcurrentMapWithTTL.Range ERROR: cannot perform operation on closed cache")
 	}
 
-	entries := make([]rangeEntry[T], 0, len(cMap.data))
+	entries := make([]*rangeEntry[T], 0, len(cMap.data))
 	cMap.RLock()
 	for key, node := range cMap.data {
-		entries = append(entries, rangeEntry[T]{key: key, node: node})
+		entries = append(entries, &rangeEntry[T]{key: key, node: node})
 	}
 	cMap.RUnlock()
 
@@ -89,6 +91,8 @@ func (cMap *ConcurrentMapWithTTL[T]) RangeWithMetrics(callback func(key string, 
 			return nil
 		}
 	}
+
+	entries = nil
 
 	return nil
 }
