@@ -83,6 +83,7 @@ cache.Delete("key")
 cache.Range(func(key string, value string) bool { 
 //Process key-value pair return true 
 //continue iteration 
+	return true // Continue iteration, false - iteration will stop
 })
 ```
 
@@ -118,7 +119,7 @@ cache.RangeWithMetrics(
 		createdAt.Format(time.RFC3339), 
 		setCount, 
 		getCount)
-    return true // Continue iteration
+    return true // Continue iteration, false - iteration will stop
 })
 ```
 
