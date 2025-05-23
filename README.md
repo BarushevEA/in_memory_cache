@@ -70,19 +70,20 @@ Both cache implementations feature an advanced TTL (Time-To-Live) system:
 ### Basic Usage
 
 ```go
-// Create cache ctx := context.Background() 
-// cache := NewShardedCache[string](ctx, 5 * time.Minute, 1 * time.Minute)
+// Create 
+cache ctx := context.Background() 
+cache := NewShardedCache[string](ctx, 5 * time.Minute, 1 * time.Minute)
 
 // Basic operations 
-// cache.Set("key", "value") 
-// value, exists := cache.Get("key") 
-// cache.Delete("key")
+cache.Set("key", "value") 
+value, exists := cache.Get("key") 
+cache.Delete("key")
 
 // Iterate over elements 
-//cache.Range(func(key string, value string) bool { 
+cache.Range(func(key string, value string) bool { 
 //Process key-value pair return true 
 //continue iteration 
-//})
+})
 ```
 
 ### With Custom Type
@@ -96,6 +97,52 @@ cache := NewShardedCache[*User](ctx, 5 * time.Minute, 1 * time.Minute)
 cache.Set("user:1", &User{ID: 1, Name: "John"})
 ```
 
+## Metrics and Advanced Features
+The library provides extended methods for retrieving metrics on cache elements, allowing for deeper analysis of their usage and behavior.
+
+### RangeWithMetrics
+This method allows you to iterate over all cache elements, obtaining not only the key and value but also additional metrics for each element:
+
+- createdAt time.Time: The time the item was added to the cache.
+- setCount uint32: The number of Set operations for this item (including the initial addition).
+- getCount uint32: The number of Get operations for this item.
+
+## Usage Example:
+```go
+cache.RangeWithMetrics(
+	func(key, value, createdAt, setCount, getCount) bool {
+    fmt.Printf(
+		"Key: %s, Value: %v, Created At: %s, Set Count: %d, Get Count: %d\n", 
+		key, 
+		value, 
+		createdAt.Format(time.RFC3339), 
+		setCount, 
+		getCount)
+    return true // Continue iteration
+})
+```
+
+### GetNodeValueWithMetrics
+This method allows you to retrieve the value of an element by key along with its metrics without incrementing getCount:
+
+- value T: The value of the element.
+- createdAt time.Time: The creation time of the element.
+- setCount uint32: The number of Set operations for this element.
+- getCount uint32: The number of Get operations for this element.
+- found bool: A flag indicating whether the element was found in the cache.
+
+## Usage Example:
+```go
+value, createdAt, setCount, getCount, exists := cache.GetNodeValueWithMetrics("key")
+if exists {
+    fmt.Printf(
+		"Value: %v, Created At: %s, Set Count: %d, Get Count: %d\n", 
+		value, 
+		createdAt.Format(time.RFC3339), 
+		setCount, 
+		getCount)
+}
+```
 
 ## Performance
 
