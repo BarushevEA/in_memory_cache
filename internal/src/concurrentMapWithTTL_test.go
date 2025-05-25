@@ -1061,3 +1061,231 @@ func TestConcurrentMapWithTTL_Metrics(t *testing.T) {
 		assert.Equal(t, uint32(0), getCount)
 	})
 }
+
+func TestConcurrentMapWithTTL_SetBatch(t *testing.T) {
+	ctx := context.Background()
+	cache := NewConcurrentMapWithTTL[string](ctx, 5*time.Second, 1*time.Second)
+
+	testCases := []struct {
+		name    string
+		batch   map[string]string
+		wantErr bool
+	}{
+		{
+			name: "successful multiple items addition",
+			batch: map[string]string{
+				"key1": "value1",
+				"key2": "value2",
+				"key3": "value3",
+			},
+			wantErr: false,
+		},
+		{
+			name:    "empty batch",
+			batch:   map[string]string{},
+			wantErr: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := cache.SetBatch(tc.batch)
+			if tc.wantErr {
+				assert.Error(t, err)
+				return
+			}
+			assert.NoError(t, err)
+
+			// Verify all values were set correctly
+			for k, v := range tc.batch {
+				val, exists := cache.Get(k)
+				assert.True(t, exists)
+				assert.Equal(t, v, val)
+			}
+		})
+	}
+}
+
+func TestConcurrentMapWithTTL_GetBatch(t *testing.T) {
+	ctx := context.Background()
+	cache := NewConcurrentMapWithTTL[string](ctx, 5*time.Second, 1*time.Second)
+
+	// Prepare test data
+	initialData := map[string]string{
+		"key1": "value1",
+		"key2": "value2",
+		"key3": "value3",
+	}
+	err := cache.SetBatch(initialData)
+	assert.NoError(t, err)
+
+	testCases := []struct {
+		name     string
+		keys     []string
+		expected []*BatchNode[string]
+	}{
+		{
+			name: "get existing keys",
+			keys: []string{"key1", "key2"},
+			expected: []*BatchNode[string]{
+				{Key: "key1", Value: "value1", Exists: true},
+				{Key: "key2", Value: "value2", Exists: true},
+			},
+		},
+		{
+			name: "get non-existent key",
+			keys: []string{"nonexistent"},
+			expected: []*BatchNode[string]{
+				{Key: "nonexistent", Value: "", Exists: false},
+			},
+		},
+		{
+			name:     "empty keys list",
+			keys:     []string{},
+			expected: []*BatchNode[string]{},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := cache.GetBatch(tc.keys)
+			assert.NoError(t, err)
+			assert.Equal(t, len(tc.expected), len(result))
+
+			for i, expected := range tc.expected {
+				assert.Equal(t, expected.Key, result[i].Key)
+				assert.Equal(t, expected.Value, result[i].Value)
+				assert.Equal(t, expected.Exists, result[i].Exists)
+			}
+		})
+	}
+}
+
+func TestConcurrentMapWithTTL_GetBatchWithMetrics(t *testing.T) {
+	ctx := context.Background()
+	cache := NewConcurrentMapWithTTL[string](ctx, 5*time.Second, 1*time.Second)
+
+	// Prepare test data
+	initialData := map[string]string{
+		"key1": "value1",
+		"key2": "value2",
+	}
+	err := cache.SetBatch(initialData)
+	assert.NoError(t, err)
+
+	// Make some accesses to generate metrics
+	cache.Get("key1")
+	cache.Get("key1")
+
+	testCases := []struct {
+		name        string
+		keys        []string
+		checkResult func(t *testing.T, metrics []*Metric[string])
+	}{
+		{
+			name: "check metrics for existing keys",
+			keys: []string{"key1", "key2"},
+			checkResult: func(t *testing.T, metrics []*Metric[string]) {
+				assert.Equal(t, 2, len(metrics))
+
+				// Check key1
+				assert.Equal(t, "key1", metrics[0].Key)
+				assert.Equal(t, "value1", metrics[0].Value)
+				assert.True(t, metrics[0].Exists)
+				assert.False(t, metrics[0].TimeCreated.IsZero())
+				assert.Equal(t, uint32(1), metrics[0].SetCount)
+				assert.Equal(t, uint32(2), metrics[0].GetCount)
+
+				// Check key2
+				assert.Equal(t, "key2", metrics[1].Key)
+				assert.Equal(t, "value2", metrics[1].Value)
+				assert.True(t, metrics[1].Exists)
+				assert.False(t, metrics[1].TimeCreated.IsZero())
+				assert.Equal(t, uint32(1), metrics[1].SetCount)
+				assert.Equal(t, uint32(0), metrics[1].GetCount)
+			},
+		},
+		{
+			name: "check non-existent key",
+			keys: []string{"nonexistent"},
+			checkResult: func(t *testing.T, metrics []*Metric[string]) {
+				assert.Equal(t, 1, len(metrics))
+				assert.Equal(t, "nonexistent", metrics[0].Key)
+				assert.False(t, metrics[0].Exists)
+				assert.Empty(t, metrics[0].Value)
+				assert.True(t, metrics[0].TimeCreated.IsZero())
+				assert.Equal(t, uint32(0), metrics[0].SetCount)
+				assert.Equal(t, uint32(0), metrics[0].GetCount)
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			metrics, err := cache.GetBatchWithMetrics(tc.keys)
+			assert.NoError(t, err)
+			tc.checkResult(t, metrics)
+		})
+	}
+}
+
+func TestConcurrentMapWithTTL_DeleteBatch(t *testing.T) {
+	ctx := context.Background()
+	cache := NewConcurrentMapWithTTL[string](ctx, 5*time.Second, 1*time.Second)
+
+	// Prepare test data
+	initialData := map[string]string{
+		"key1": "value1",
+		"key2": "value2",
+		"key3": "value3",
+	}
+	err := cache.SetBatch(initialData)
+	assert.NoError(t, err)
+
+	testCases := []struct {
+		name         string
+		keysToDelete []string
+		checkResult  func(t *testing.T, c ICacheInMemory[string])
+	}{
+		{
+			name:         "delete existing keys",
+			keysToDelete: []string{"key1", "key2"},
+			checkResult: func(t *testing.T, c ICacheInMemory[string]) {
+				// Verify keys are deleted
+				_, exists := c.Get("key1")
+				assert.False(t, exists)
+				_, exists = c.Get("key2")
+				assert.False(t, exists)
+				// Verify remaining key
+				val, exists := c.Get("key3")
+				assert.True(t, exists)
+				assert.Equal(t, "value3", val)
+			},
+		},
+		{
+			name:         "delete non-existent keys",
+			keysToDelete: []string{"nonexistent1", "nonexistent2"},
+			checkResult: func(t *testing.T, c ICacheInMemory[string]) {
+				// Verify remaining key still exists
+				val, exists := c.Get("key3")
+				assert.True(t, exists)
+				assert.Equal(t, "value3", val)
+				assert.Equal(t, 1, c.Len())
+			},
+		},
+		{
+			name:         "empty keys list",
+			keysToDelete: []string{},
+			checkResult: func(t *testing.T, c ICacheInMemory[string]) {
+				assert.Equal(t, 1, c.Len())
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			cache.DeleteBatch(tc.keysToDelete)
+			tc.checkResult(t, cache)
+		})
+	}
+}
