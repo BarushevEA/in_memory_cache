@@ -246,11 +246,15 @@ func (cMap *ConcurrentMapWithTTL[T]) Delete(key string) {
 	}
 
 	cMap.Lock()
-	if node, ok := cMap.data[key]; ok {
-		node.Clear()
+	node, ok := cMap.data[key]
+	if ok {
 		delete(cMap.data, key)
 	}
 	cMap.Unlock()
+
+	if ok {
+		node.Clear()
+	}
 }
 
 // DeleteBatch removes multiple keys and their associated data from the map. Clears each node before deletion if it exists.
@@ -259,14 +263,18 @@ func (cMap *ConcurrentMapWithTTL[T]) DeleteBatch(keys []string) {
 		return
 	}
 
-	cMap.Lock()
 	for _, key := range keys {
-		if node, ok := cMap.data[key]; ok {
-			node.Clear()
+		cMap.Lock()
+		node, ok := cMap.data[key]
+		if ok {
 			delete(cMap.data, key)
 		}
+		cMap.Unlock()
+
+		if ok {
+			node.Clear()
+		}
 	}
-	cMap.Unlock()
 }
 
 // Clear removes all elements from the map and clears their associated nodes.
