@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/BarushevEA/in_memory_cache/pkg"
+	"github.com/BarushevEA/in_memory_cache/types"
 	"time"
 )
 
@@ -24,7 +25,7 @@ func main() {
 }
 
 // bench measures and prints the duration of setting 10 million entries in a cache implementing the ICache interface.
-func bench(cache pkg.ICache[*Test], cacheName string) {
+func bench(cache types.ICacheInMemory[*Test], cacheName string) {
 	start := time.Now()
 	for i := 0; i < 10000000; i++ {
 		err := cache.Set(fmt.Sprintf("%dkey", i), &Test{"name", 20})
