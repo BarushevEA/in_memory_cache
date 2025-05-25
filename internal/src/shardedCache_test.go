@@ -669,3 +669,283 @@ func TestDynamicShardedMapWithTTL_Metrics(t *testing.T) {
 		}
 	})
 }
+
+func TestDynamicShardedMapWithTTL_SetBatch(t *testing.T) {
+	ctx := context.Background()
+	cache := NewDynamicShardedMapWithTTL[string](ctx, 5*time.Second, 1*time.Second)
+
+	tests := []struct {
+		name    string
+		batch   map[string]string
+		wantErr bool
+	}{
+		{
+			name: "successful multiple items addition",
+			batch: map[string]string{
+				"key1": "value1",
+				"key2": "value2",
+				"key3": "value3",
+			},
+			wantErr: false,
+		},
+		{
+			name:    "empty batch",
+			batch:   map[string]string{},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := cache.SetBatch(tt.batch)
+			if tt.wantErr {
+				assert.Error(t, err)
+				return
+			}
+			assert.NoError(t, err)
+
+			// Verify all values were set correctly
+			for k, v := range tt.batch {
+				val, exists := cache.Get(k)
+				assert.True(t, exists)
+				assert.Equal(t, v, val)
+			}
+		})
+	}
+
+	// Test with closed cache
+	t.Run("closed cache", func(t *testing.T) {
+		cache.Clear()
+		err := cache.SetBatch(map[string]string{"key": "value"})
+		assert.Error(t, err)
+		assert.Equal(t, "cache is closed", err.Error())
+	})
+}
+
+func TestDynamicShardedMapWithTTL_GetBatch(t *testing.T) {
+	ctx := context.Background()
+	cache := NewDynamicShardedMapWithTTL[string](ctx, 5*time.Second, 1*time.Second)
+
+	// Initialize test data
+	initialData := map[string]string{
+		"key1": "value1",
+		"key2": "value2",
+		"key3": "value3",
+	}
+	err := cache.SetBatch(initialData)
+	assert.NoError(t, err)
+
+	tests := []struct {
+		name     string
+		keys     []string
+		expected []*BatchNode[string]
+		wantErr  bool
+	}{
+		{
+			name: "get existing keys",
+			keys: []string{"key1", "key2"},
+			expected: []*BatchNode[string]{
+				{Key: "key1", Value: "value1", Exists: true},
+				{Key: "key2", Value: "value2", Exists: true},
+			},
+			wantErr: false,
+		},
+		{
+			name: "get non-existent key",
+			keys: []string{"nonexistent"},
+			expected: []*BatchNode[string]{
+				{Key: "nonexistent", Value: "", Exists: false},
+			},
+			wantErr: false,
+		},
+		{
+			name:     "empty keys list",
+			keys:     []string{},
+			expected: []*BatchNode[string]{},
+			wantErr:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := cache.GetBatch(tt.keys)
+			if tt.wantErr {
+				assert.Error(t, err)
+				return
+			}
+			assert.NoError(t, err)
+			assert.Equal(t, len(tt.expected), len(result))
+
+			for i, expected := range tt.expected {
+				assert.Equal(t, expected.Key, result[i].Key)
+				assert.Equal(t, expected.Value, result[i].Value)
+				assert.Equal(t, expected.Exists, result[i].Exists)
+			}
+		})
+	}
+
+	// Test with closed cache
+	t.Run("closed cache", func(t *testing.T) {
+		cache.Clear()
+		result, err := cache.GetBatch([]string{"key1"})
+		assert.Error(t, err)
+		assert.Nil(t, result)
+		assert.Equal(t, "cache is closed", err.Error())
+	})
+}
+
+func TestDynamicShardedMapWithTTL_GetBatchWithMetrics(t *testing.T) {
+	ctx := context.Background()
+	cache := NewDynamicShardedMapWithTTL[string](ctx, 5*time.Second, 1*time.Second)
+
+	// Initialize test data
+	initialData := map[string]string{
+		"key1": "value1",
+		"key2": "value2",
+	}
+	err := cache.SetBatch(initialData)
+	assert.NoError(t, err)
+
+	// Generate some metrics
+	_, _ = cache.Get("key1")
+	_, _ = cache.Get("key1")
+
+	tests := []struct {
+		name        string
+		keys        []string
+		checkResult func(t *testing.T, metrics []*Metric[string])
+		wantErr     bool
+	}{
+		{
+			name: "check metrics for existing keys",
+			keys: []string{"key1", "key2"},
+			checkResult: func(t *testing.T, metrics []*Metric[string]) {
+				assert.Equal(t, 2, len(metrics))
+
+				// Check key1 with multiple gets
+				key1 := metrics[0]
+				assert.Equal(t, "key1", key1.Key)
+				assert.Equal(t, "value1", key1.Value)
+				assert.True(t, key1.Exists)
+				assert.False(t, key1.TimeCreated.IsZero())
+				assert.Equal(t, uint32(1), key1.SetCount)
+				assert.Equal(t, uint32(2), key1.GetCount)
+
+				// Check key2 with no gets
+				key2 := metrics[1]
+				assert.Equal(t, "key2", key2.Key)
+				assert.Equal(t, "value2", key2.Value)
+				assert.True(t, key2.Exists)
+				assert.False(t, key2.TimeCreated.IsZero())
+				assert.Equal(t, uint32(1), key2.SetCount)
+				assert.Equal(t, uint32(0), key2.GetCount)
+			},
+			wantErr: false,
+		},
+		{
+			name: "check non-existent key",
+			keys: []string{"nonexistent"},
+			checkResult: func(t *testing.T, metrics []*Metric[string]) {
+				assert.Equal(t, 1, len(metrics))
+				metric := metrics[0]
+				assert.Equal(t, "nonexistent", metric.Key)
+				assert.False(t, metric.Exists)
+				assert.Empty(t, metric.Value)
+				assert.True(t, metric.TimeCreated.IsZero())
+				assert.Equal(t, uint32(0), metric.SetCount)
+				assert.Equal(t, uint32(0), metric.GetCount)
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			metrics, err := cache.GetBatchWithMetrics(tt.keys)
+			if tt.wantErr {
+				assert.Error(t, err)
+				return
+			}
+			assert.NoError(t, err)
+			tt.checkResult(t, metrics)
+		})
+	}
+
+	// Test with closed cache
+	t.Run("closed cache", func(t *testing.T) {
+		cache.Clear()
+		metrics, err := cache.GetBatchWithMetrics([]string{"key1"})
+		assert.Error(t, err)
+		assert.Nil(t, metrics)
+		assert.Equal(t, "cache is closed", err.Error())
+	})
+}
+
+func TestDynamicShardedMapWithTTL_DeleteBatch(t *testing.T) {
+	ctx := context.Background()
+	cache := NewDynamicShardedMapWithTTL[string](ctx, 5*time.Second, 1*time.Second)
+
+	// Initialize test data
+	initialData := map[string]string{
+		"key1": "value1",
+		"key2": "value2",
+		"key3": "value3",
+	}
+	err := cache.SetBatch(initialData)
+	assert.NoError(t, err)
+
+	tests := []struct {
+		name         string
+		keysToDelete []string
+		checkResult  func(t *testing.T, c ICacheInMemory[string])
+	}{
+		{
+			name:         "delete existing keys",
+			keysToDelete: []string{"key1", "key2"},
+			checkResult: func(t *testing.T, c ICacheInMemory[string]) {
+				// Verify keys are deleted
+				_, exists := c.Get("key1")
+				assert.False(t, exists)
+				_, exists = c.Get("key2")
+				assert.False(t, exists)
+				// Verify remaining key
+				val, exists := c.Get("key3")
+				assert.True(t, exists)
+				assert.Equal(t, "value3", val)
+			},
+		},
+		{
+			name:         "delete non-existent keys",
+			keysToDelete: []string{"nonexistent1", "nonexistent2"},
+			checkResult: func(t *testing.T, c ICacheInMemory[string]) {
+				// Verify state remains unchanged
+				val, exists := c.Get("key3")
+				assert.True(t, exists)
+				assert.Equal(t, "value3", val)
+				assert.Equal(t, 1, c.Len())
+			},
+		},
+		{
+			name:         "empty delete list",
+			keysToDelete: []string{},
+			checkResult: func(t *testing.T, c ICacheInMemory[string]) {
+				assert.Equal(t, 1, c.Len())
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cache.DeleteBatch(tt.keysToDelete)
+			tt.checkResult(t, cache)
+		})
+	}
+
+	// Test with closed cache
+	t.Run("closed cache", func(t *testing.T) {
+		cache.Clear()
+		cache.DeleteBatch([]string{"key1"})
+		// Should not panic and should be a no-op
+		assert.Equal(t, 0, cache.Len())
+	})
+}
