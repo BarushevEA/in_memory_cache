@@ -50,8 +50,8 @@ func NewDynamicShardedMapWithTTL[T any](ctx context.Context, ttl, decrement time
 }
 
 // getShard returns the shard corresponding to the given hash, creating it if it doesn't already exist.
-func (m *DynamicShardedMapWithTTL[T]) getShard(hash uint8) ICacheInMemory[T] {
-	shard := (*ICacheInMemory[T])(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&m.shards[hash]))))
+func (shardMap *DynamicShardedMapWithTTL[T]) getShard(hash uint8) ICacheInMemory[T] {
+	shard := (*ICacheInMemory[T])(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&shardMap.shards[hash]))))
 	if shard != nil {
 		return *shard
 	}
@@ -60,116 +60,60 @@ func (m *DynamicShardedMapWithTTL[T]) getShard(hash uint8) ICacheInMemory[T] {
 	mu.Lock()
 	defer mu.Unlock()
 
-	shard = (*ICacheInMemory[T])(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&m.shards[hash]))))
+	shard = (*ICacheInMemory[T])(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&shardMap.shards[hash]))))
 	if shard != nil {
 		return *shard
 	}
 
-	newShard := NewConcurrentMapWithTTL[T](m.ctx, m.ttl, m.decrement)
+	newShard := NewConcurrentMapWithTTL[T](shardMap.ctx, shardMap.ttl, shardMap.decrement)
 	atomic.StorePointer(
-		(*unsafe.Pointer)(unsafe.Pointer(&m.shards[hash])),
+		(*unsafe.Pointer)(unsafe.Pointer(&shardMap.shards[hash])),
 		unsafe.Pointer(&newShard),
 	)
 	return newShard
 }
 
 // Set inserts or updates a key-value pair in the dynamic sharded map. Returns an error if the map is closed.
-func (m *DynamicShardedMapWithTTL[T]) Set(key string, value T) error {
-	if m.isClosed.Load() {
+func (shardMap *DynamicShardedMapWithTTL[T]) Set(key string, value T) error {
+	if shardMap.isClosed.Load() {
 		return errors.New("cache is closed")
 	}
 
 	hash := utils.GetTopHash(key)
-	shard := m.getShard(hash)
+	shard := shardMap.getShard(hash)
 	return shard.Set(key, value)
 }
 
+// SetBatch inserts or updates multiple key-value pairs in the dynamic sharded map and returns an error if the map is closed.
+func (shardMap *DynamicShardedMapWithTTL[T]) SetBatch(batch map[string]T) error {
+	if shardMap.isClosed.Load() {
+		return errors.New("cache is closed")
+	}
+
+	for key, value := range batch {
+		err := shardMap.Set(key, value)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // Get retrieves the value associated with the given key from the dynamic sharded map and its existence status.
-func (m *DynamicShardedMapWithTTL[T]) Get(key string) (T, bool) {
-	if m.isClosed.Load() {
+func (shardMap *DynamicShardedMapWithTTL[T]) Get(key string) (T, bool) {
+	if shardMap.isClosed.Load() {
 		return *new(T), false
 	}
 
 	hash := utils.GetTopHash(key)
-	shard := m.getShard(hash)
+	shard := shardMap.getShard(hash)
 	return shard.Get(key)
 }
 
-// Delete removes an entry with the specified key from the map if it exists and the map is not closed.
-func (m *DynamicShardedMapWithTTL[T]) Delete(key string) {
-	if m.isClosed.Load() {
-		return
-	}
-
-	hash := utils.GetTopHash(key)
-	if shard := (*ICacheInMemory[T])(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&m.shards[hash])))); shard != nil {
-		(*shard).Delete(key)
-	}
-}
-
-// Clear removes all data from the map, clears underlying shards, and cancels the internal context, marking the map as closed.
-func (m *DynamicShardedMapWithTTL[T]) Clear() {
-	if !m.isClosed.CompareAndSwap(false, true) {
-		return
-	}
-
-	for i := range m.shards {
-		if shard := (*ICacheInMemory[T])(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&m.shards[i])))); shard != nil {
-			(*shard).Clear()
-			atomic.StorePointer((*unsafe.Pointer)(unsafe.Pointer(&m.shards[i])), nil)
-		}
-	}
-	m.cancel()
-}
-
-// Len returns the total number of entries across all shards in the map or 0 if the map is closed.
-func (m *DynamicShardedMapWithTTL[T]) Len() int {
-	if m.isClosed.Load() {
-		return 0
-	}
-
-	total := 0
-	for i := range m.shards {
-		if shard := (*ICacheInMemory[T])(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&m.shards[i])))); shard != nil {
-			total += (*shard).Len()
-		}
-	}
-	return total
-}
-
-// Range iterates over all key-value pairs in the map, applying the provided callback function.
-// Returns an error if the map is closed or if an error occurs during shard iteration.
-func (m *DynamicShardedMapWithTTL[T]) Range(callback func(key string, value T) bool) error {
-	if m.isClosed.Load() {
-		return errors.New("cache is closed")
-	}
-
-	for i := range m.shards {
-		if shard := (*ICacheInMemory[T])(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&m.shards[i])))); shard != nil {
-			if err := (*shard).Range(callback); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func (m *DynamicShardedMapWithTTL[T]) RangeWithMetrics(callback func(key string, value T, createdAt time.Time, setCount uint32, getCount uint32) bool) error {
-	if m.isClosed.Load() {
-		return errors.New("cache is closed")
-	}
-
-	for i := range m.shards {
-		if shard := (*ICacheInMemory[T])(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&m.shards[i])))); shard != nil {
-			if err := (*shard).RangeWithMetrics(callback); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func (m *DynamicShardedMapWithTTL[T]) GetNodeValueWithMetrics(key string) (T, time.Time, uint32, uint32, bool) {
+// GetNodeValueWithMetrics retrieves the value and associated metadata for a specific key if it exists in the map.
+// Returns the value, the time it was created, the number of times it's been set, the number of times it's been retrieved, and a boolean indicating existence.
+func (shardMap *DynamicShardedMapWithTTL[T]) GetNodeValueWithMetrics(key string) (T, time.Time, uint32, uint32, bool) {
 	var (
 		timeCreated time.Time
 		setCount    uint32
@@ -178,13 +122,135 @@ func (m *DynamicShardedMapWithTTL[T]) GetNodeValueWithMetrics(key string) (T, ti
 		value       T
 	)
 
-	if m.isClosed.Load() {
+	if shardMap.isClosed.Load() {
 		return value, timeCreated, setCount, getCount, exists
 	}
 
 	hash := utils.GetTopHash(key)
-	shard := m.getShard(hash)
+	shard := shardMap.getShard(hash)
 
 	value, timeCreated, setCount, getCount, exists = shard.GetNodeValueWithMetrics(key)
 	return value, timeCreated, setCount, getCount, exists
+}
+
+// GetBatch retrieves a batch of key-value pairs from the map for the provided keys. Returns error if the map is closed.
+func (shardMap *DynamicShardedMapWithTTL[T]) GetBatch(keys []string) ([]*BatchNode[T], error) {
+	if shardMap.isClosed.Load() {
+		return nil, errors.New("cache is closed")
+	}
+
+	var batch = make([]*BatchNode[T], 0, len(keys))
+	for _, key := range keys {
+		node := &BatchNode[T]{}
+		node.Key = key
+		node.Value, node.Exists = shardMap.Get(key)
+
+		batch = append(batch, node)
+	}
+
+	return batch, nil
+}
+
+// GetBatchWithMetrics retrieves a batch of metrics for the given keys, including value, creation time, and access stats.
+// Returns an error if the map is closed.
+func (shardMap *DynamicShardedMapWithTTL[T]) GetBatchWithMetrics(keys []string) ([]*Metric[T], error) {
+	if shardMap.isClosed.Load() {
+		return nil, errors.New("cache is closed")
+	}
+
+	var batch = make([]*Metric[T], 0, len(keys))
+	for _, key := range keys {
+		node := &Metric[T]{}
+		node.Key = key
+		node.Value, node.TimeCreated, node.SetCount, node.GetCount, node.Exists = shardMap.GetNodeValueWithMetrics(key)
+
+		batch = append(batch, node)
+	}
+
+	return batch, nil
+}
+
+// Delete removes an entry with the specified key from the map if it exists and the map is not closed.
+func (shardMap *DynamicShardedMapWithTTL[T]) Delete(key string) {
+	if shardMap.isClosed.Load() {
+		return
+	}
+
+	hash := utils.GetTopHash(key)
+	if shard := (*ICacheInMemory[T])(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&shardMap.shards[hash])))); shard != nil {
+		(*shard).Delete(key)
+	}
+}
+
+// DeleteBatch removes multiple entries from the map for the provided keys if they exist and the map is not closed.
+func (shardMap *DynamicShardedMapWithTTL[T]) DeleteBatch(keys []string) {
+	if shardMap.isClosed.Load() {
+		return
+	}
+
+	for _, key := range keys {
+		shardMap.Delete(key)
+	}
+}
+
+// Clear removes all data from the map, clears underlying shards, and cancels the internal context, marking the map as closed.
+func (shardMap *DynamicShardedMapWithTTL[T]) Clear() {
+	if !shardMap.isClosed.CompareAndSwap(false, true) {
+		return
+	}
+
+	for i := range shardMap.shards {
+		if shard := (*ICacheInMemory[T])(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&shardMap.shards[i])))); shard != nil {
+			(*shard).Clear()
+			atomic.StorePointer((*unsafe.Pointer)(unsafe.Pointer(&shardMap.shards[i])), nil)
+		}
+	}
+	shardMap.cancel()
+}
+
+// Len returns the total number of entries across all shards in the map or 0 if the map is closed.
+func (shardMap *DynamicShardedMapWithTTL[T]) Len() int {
+	if shardMap.isClosed.Load() {
+		return 0
+	}
+
+	total := 0
+	for i := range shardMap.shards {
+		if shard := (*ICacheInMemory[T])(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&shardMap.shards[i])))); shard != nil {
+			total += (*shard).Len()
+		}
+	}
+	return total
+}
+
+// Range iterates over all key-value pairs in the map, applying the provided callback function.
+// Returns an error if the map is closed or if an error occurs during shard iteration.
+func (shardMap *DynamicShardedMapWithTTL[T]) Range(callback func(key string, value T) bool) error {
+	if shardMap.isClosed.Load() {
+		return errors.New("cache is closed")
+	}
+
+	for i := range shardMap.shards {
+		if shard := (*ICacheInMemory[T])(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&shardMap.shards[i])))); shard != nil {
+			if err := (*shard).Range(callback); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (shardMap *DynamicShardedMapWithTTL[T]) RangeWithMetrics(callback func(key string, value T, createdAt time.Time, setCount uint32, getCount uint32) bool) error {
+	if shardMap.isClosed.Load() {
+		return errors.New("cache is closed")
+	}
+
+	for i := range shardMap.shards {
+		if shard := (*ICacheInMemory[T])(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&shardMap.shards[i])))); shard != nil {
+			if err := (*shard).RangeWithMetrics(callback); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

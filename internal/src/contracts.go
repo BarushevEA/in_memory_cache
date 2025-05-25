@@ -1,6 +1,8 @@
 package src
 
-import "time"
+import (
+	"time"
+)
 
 // IMapNode defines an interface for managing nodes with generic data, time-to-live, and lifecycle management functionality.
 // SetTTL sets the time-to-live duration for the node.
@@ -30,12 +32,19 @@ type IMapNode[T any] interface {
 // Range iterates over key-value pairs, applying the provided callback function, and halts if the callback returns false.
 type ICacheInMemory[T any] interface {
 	Set(key string, value T) error
-	Get(key string) (T, bool)
-	Delete(key string)
-	Clear()
+	SetBatch(batch map[string]T) error
 
+	Get(key string) (T, bool)
+	GetNodeValueWithMetrics(key string) (T, time.Time, uint32, uint32, bool)
+	GetBatch(keys []string) ([]*BatchNode[T], error)
+	GetBatchWithMetrics(keys []string) ([]*Metric[T], error)
+
+	Delete(key string)
+	DeleteBatch(keys []string)
+
+	Clear()
 	Len() int
+
 	Range(func(key string, value T) bool) error
 	RangeWithMetrics(callback func(key string, value T, createdAt time.Time, setCount uint32, getCount uint32) bool) error
-	GetNodeValueWithMetrics(key string) (T, time.Time, uint32, uint32, bool)
 }

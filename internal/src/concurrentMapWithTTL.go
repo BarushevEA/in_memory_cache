@@ -24,6 +24,7 @@ type ConcurrentMapWithTTL[T any] struct {
 	maxKeysForDeleteCount int
 }
 
+// rangeEntry represents a key-value entry with a key of type string and a node implementing the IMapNode interface.
 type rangeEntry[T any] struct {
 	key  string
 	node IMapNode[T]
@@ -129,6 +130,22 @@ func (cMap *ConcurrentMapWithTTL[T]) Set(key string, value T) error {
 	return nil
 }
 
+// SetBatch adds multiple key-value pairs to the map by invoking the Set method for each entry in the provided batch map.
+func (cMap *ConcurrentMapWithTTL[T]) SetBatch(batch map[string]T) error {
+	if cMap.isClosed {
+		return errors.New("ConcurrentMapWithTTL.Set ERROR: cannot perform operation on closed cache")
+	}
+
+	for key, value := range batch {
+		err := cMap.Set(key, value)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // Get retrieves the value associated with the given key and a boolean indicating if the key exists in the map.
 func (cMap *ConcurrentMapWithTTL[T]) Get(key string) (T, bool) {
 	if cMap.isClosed {
@@ -146,6 +163,81 @@ func (cMap *ConcurrentMapWithTTL[T]) Get(key string) (T, bool) {
 	return *new(T), false
 }
 
+// GetNodeValueWithMetrics retrieves the value, creation time, set count, and get count for a key, along with its existence status.
+func (cMap *ConcurrentMapWithTTL[T]) GetNodeValueWithMetrics(key string) (T, time.Time, uint32, uint32, bool) {
+	var (
+		timeCreated time.Time
+		setCount    uint32
+		getCount    uint32
+		value       T
+	)
+
+	if cMap.isClosed {
+		return value, timeCreated, setCount, getCount, false
+	}
+
+	cMap.RLock()
+	node, exists := cMap.data[key]
+	cMap.RUnlock()
+
+	if !exists {
+		return value, timeCreated, setCount, getCount, false
+	}
+
+	value, timeCreated, setCount, getCount = node.GetDataWithMetrics()
+
+	return value, timeCreated, setCount, getCount, true
+}
+
+// GetBatch retrieves a batch of values corresponding to the provided keys from the ConcurrentMapWithTTL.
+// It returns a slice of BatchNode containing the values, existence flags, or an error if the map is closed.
+func (cMap *ConcurrentMapWithTTL[T]) GetBatch(keys []string) ([]*BatchNode[T], error) {
+	if cMap.isClosed {
+		return nil, errors.New("ConcurrentMapWithTTL.Get ERROR: cannot perform operation on closed cache")
+	}
+	batch := make([]*BatchNode[T], 0, len(keys))
+	for _, key := range keys {
+		node := &BatchNode[T]{}
+		node.Key = key
+		node.Value, node.Exists = cMap.Get(key)
+
+		batch = append(batch, node)
+	}
+	return batch, nil
+}
+
+// GetBatchWithMetrics retrieves detailed metrics for a batch of keys, returning a slice of Metric objects or an error.
+func (cMap *ConcurrentMapWithTTL[T]) GetBatchWithMetrics(keys []string) ([]*Metric[T], error) {
+	if cMap.isClosed {
+		return nil, errors.New("ConcurrentMapWithTTL.Get ERROR: cannot perform operation on closed cache")
+	}
+
+	result := make([]*Metric[T], 0, len(keys))
+	for _, key := range keys {
+		metric := &Metric[T]{}
+		metric.Key = key
+
+		cMap.RLock()
+		node, exists := cMap.data[key]
+		cMap.RUnlock()
+
+		if !exists {
+			result = append(result, metric)
+			continue
+		}
+
+		metric.Value,
+			metric.TimeCreated,
+			metric.SetCount,
+			metric.GetCount = node.GetDataWithMetrics()
+		metric.Exists = true
+
+		result = append(result, metric)
+	}
+
+	return result, nil
+}
+
 // Delete removes a key and its associated data from the map, clearing the node before deletion if it exists.
 func (cMap *ConcurrentMapWithTTL[T]) Delete(key string) {
 	if cMap.isClosed {
@@ -156,6 +248,22 @@ func (cMap *ConcurrentMapWithTTL[T]) Delete(key string) {
 	if node, ok := cMap.data[key]; ok {
 		node.Clear()
 		delete(cMap.data, key)
+	}
+	cMap.Unlock()
+}
+
+// DeleteBatch removes multiple keys and their associated data from the map. Clears each node before deletion if it exists.
+func (cMap *ConcurrentMapWithTTL[T]) DeleteBatch(keys []string) {
+	if cMap.isClosed {
+		return
+	}
+
+	cMap.Lock()
+	for _, key := range keys {
+		if node, ok := cMap.data[key]; ok {
+			node.Clear()
+			delete(cMap.data, key)
+		}
 	}
 	cMap.Unlock()
 }
@@ -247,29 +355,4 @@ func (cMap *ConcurrentMapWithTTL[T]) tickCollection() {
 			isProcessed = false
 		}
 	}
-}
-
-func (cMap *ConcurrentMapWithTTL[T]) GetNodeValueWithMetrics(key string) (T, time.Time, uint32, uint32, bool) {
-	var (
-		timeCreated time.Time
-		setCount    uint32
-		getCount    uint32
-		value       T
-	)
-
-	if cMap.isClosed {
-		return value, timeCreated, setCount, getCount, false
-	}
-
-	cMap.RLock()
-	node, exists := cMap.data[key]
-	cMap.RUnlock()
-
-	if !exists {
-		return value, timeCreated, setCount, getCount, false
-	}
-
-	value, timeCreated, setCount, getCount = node.GetDataWithMetrics()
-
-	return value, timeCreated, setCount, getCount, true
 }
