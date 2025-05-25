@@ -3,6 +3,7 @@ package pkg
 import (
 	"context"
 	"fmt"
+	"github.com/BarushevEA/in_memory_cache/types"
 	"testing"
 	"time"
 )
@@ -19,7 +20,7 @@ func BenchmarkCacheMetrics(b *testing.B) {
 
 	benchmarks := []struct {
 		name     string
-		createFn func(context.Context, time.Duration, time.Duration) ICache[testStruct]
+		createFn func(context.Context, time.Duration, time.Duration) types.ICacheInMemory[testStruct]
 	}{
 		{
 			name:     "ConcurrentCache",
@@ -113,7 +114,7 @@ func BenchmarkMetricsWithDifferentPayloads(b *testing.B) {
 		b.Run(fmt.Sprintf("PayloadSize_%dB", size), func(b *testing.B) {
 			benchmarks := []struct {
 				name     string
-				createFn func(context.Context, time.Duration, time.Duration) ICache[struct {
+				createFn func(context.Context, time.Duration, time.Duration) types.ICacheInMemory[struct {
 					ID    int
 					Value string
 				}]

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/BarushevEA/in_memory_cache/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"math/rand/v2"
@@ -738,13 +739,13 @@ func TestDynamicShardedMapWithTTL_GetBatch(t *testing.T) {
 	tests := []struct {
 		name     string
 		keys     []string
-		expected []*BatchNode[string]
+		expected []*types.BatchNode[string]
 		wantErr  bool
 	}{
 		{
 			name: "get existing keys",
 			keys: []string{"key1", "key2"},
-			expected: []*BatchNode[string]{
+			expected: []*types.BatchNode[string]{
 				{Key: "key1", Value: "value1", Exists: true},
 				{Key: "key2", Value: "value2", Exists: true},
 			},
@@ -753,7 +754,7 @@ func TestDynamicShardedMapWithTTL_GetBatch(t *testing.T) {
 		{
 			name: "get non-existent key",
 			keys: []string{"nonexistent"},
-			expected: []*BatchNode[string]{
+			expected: []*types.BatchNode[string]{
 				{Key: "nonexistent", Value: "", Exists: false},
 			},
 			wantErr: false,
@@ -761,7 +762,7 @@ func TestDynamicShardedMapWithTTL_GetBatch(t *testing.T) {
 		{
 			name:     "empty keys list",
 			keys:     []string{},
-			expected: []*BatchNode[string]{},
+			expected: []*types.BatchNode[string]{},
 			wantErr:  false,
 		},
 	}
@@ -813,13 +814,13 @@ func TestDynamicShardedMapWithTTL_GetBatchWithMetrics(t *testing.T) {
 	tests := []struct {
 		name        string
 		keys        []string
-		checkResult func(t *testing.T, metrics []*Metric[string])
+		checkResult func(t *testing.T, metrics []*types.Metric[string])
 		wantErr     bool
 	}{
 		{
 			name: "check metrics for existing keys",
 			keys: []string{"key1", "key2"},
-			checkResult: func(t *testing.T, metrics []*Metric[string]) {
+			checkResult: func(t *testing.T, metrics []*types.Metric[string]) {
 				assert.Equal(t, 2, len(metrics))
 
 				// Check key1 with multiple gets
@@ -845,7 +846,7 @@ func TestDynamicShardedMapWithTTL_GetBatchWithMetrics(t *testing.T) {
 		{
 			name: "check non-existent key",
 			keys: []string{"nonexistent"},
-			checkResult: func(t *testing.T, metrics []*Metric[string]) {
+			checkResult: func(t *testing.T, metrics []*types.Metric[string]) {
 				assert.Equal(t, 1, len(metrics))
 				metric := metrics[0]
 				assert.Equal(t, "nonexistent", metric.Key)
@@ -897,12 +898,12 @@ func TestDynamicShardedMapWithTTL_DeleteBatch(t *testing.T) {
 	tests := []struct {
 		name         string
 		keysToDelete []string
-		checkResult  func(t *testing.T, c ICacheInMemory[string])
+		checkResult  func(t *testing.T, c types.ICacheInMemory[string])
 	}{
 		{
 			name:         "delete existing keys",
 			keysToDelete: []string{"key1", "key2"},
-			checkResult: func(t *testing.T, c ICacheInMemory[string]) {
+			checkResult: func(t *testing.T, c types.ICacheInMemory[string]) {
 				// Verify keys are deleted
 				_, exists := c.Get("key1")
 				assert.False(t, exists)
@@ -917,7 +918,7 @@ func TestDynamicShardedMapWithTTL_DeleteBatch(t *testing.T) {
 		{
 			name:         "delete non-existent keys",
 			keysToDelete: []string{"nonexistent1", "nonexistent2"},
-			checkResult: func(t *testing.T, c ICacheInMemory[string]) {
+			checkResult: func(t *testing.T, c types.ICacheInMemory[string]) {
 				// Verify state remains unchanged
 				val, exists := c.Get("key3")
 				assert.True(t, exists)
@@ -928,7 +929,7 @@ func TestDynamicShardedMapWithTTL_DeleteBatch(t *testing.T) {
 		{
 			name:         "empty delete list",
 			keysToDelete: []string{},
-			checkResult: func(t *testing.T, c ICacheInMemory[string]) {
+			checkResult: func(t *testing.T, c types.ICacheInMemory[string]) {
 				assert.Equal(t, 1, c.Len())
 			},
 		},

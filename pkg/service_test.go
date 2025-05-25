@@ -3,6 +3,7 @@ package pkg
 import (
 	"context"
 	"fmt"
+	"github.com/BarushevEA/in_memory_cache/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"runtime"
@@ -15,12 +16,12 @@ import (
 func TestInvalidInputs(t *testing.T) {
 	testCases := []struct {
 		name    string
-		test    func(t *testing.T, cache ICache[string])
+		test    func(t *testing.T, cache types.ICacheInMemory[string])
 		wantErr bool
 	}{
 		{
 			name: "Very long key",
-			test: func(t *testing.T, cache ICache[string]) {
+			test: func(t *testing.T, cache types.ICacheInMemory[string]) {
 				key := make([]byte, 1<<16)
 				err := cache.Set(string(key), "value")
 				if err != nil {
@@ -31,7 +32,7 @@ func TestInvalidInputs(t *testing.T) {
 		},
 		{
 			name: "Null bytes in key",
-			test: func(t *testing.T, cache ICache[string]) {
+			test: func(t *testing.T, cache types.ICacheInMemory[string]) {
 				err := cache.Set("key\x00with\x00nulls", "value")
 				if err != nil {
 					t.Errorf("Null bytes should be handled: %v", err)
@@ -41,7 +42,7 @@ func TestInvalidInputs(t *testing.T) {
 		},
 		{
 			name: "Unicode key",
-			test: func(t *testing.T, cache ICache[string]) {
+			test: func(t *testing.T, cache types.ICacheInMemory[string]) {
 				err := cache.Set("🔑", "value")
 				if err != nil {
 					t.Errorf("Unicode key should be handled: %v", err)
@@ -51,11 +52,11 @@ func TestInvalidInputs(t *testing.T) {
 		},
 	}
 
-	caches := map[string]func() ICache[string]{
-		"ConcurrentCache": func() ICache[string] {
+	caches := map[string]func() types.ICacheInMemory[string]{
+		"ConcurrentCache": func() types.ICacheInMemory[string] {
 			return NewConcurrentCache[string](context.Background(), time.Second, time.Millisecond)
 		},
-		"ShardedCache": func() ICache[string] {
+		"ShardedCache": func() types.ICacheInMemory[string] {
 			return NewShardedCache[string](context.Background(), time.Second, time.Millisecond)
 		},
 	}
@@ -218,7 +219,7 @@ func TestHighLoad(t *testing.T) {
 func TestCache_Metrics(t *testing.T) {
 	testCases := []struct {
 		name      string
-		createFn  func(context.Context, time.Duration, time.Duration) ICache[string]
+		createFn  func(context.Context, time.Duration, time.Duration) types.ICacheInMemory[string]
 		cacheType string
 	}{
 		{

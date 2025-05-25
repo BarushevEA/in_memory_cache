@@ -3,6 +3,7 @@ package src
 import (
 	"context"
 	"fmt"
+	"github.com/BarushevEA/in_memory_cache/types"
 	"github.com/stretchr/testify/assert"
 	"math/rand/v2"
 	"runtime"
@@ -1122,12 +1123,12 @@ func TestConcurrentMapWithTTL_GetBatch(t *testing.T) {
 	testCases := []struct {
 		name     string
 		keys     []string
-		expected []*BatchNode[string]
+		expected []*types.BatchNode[string]
 	}{
 		{
 			name: "get existing keys",
 			keys: []string{"key1", "key2"},
-			expected: []*BatchNode[string]{
+			expected: []*types.BatchNode[string]{
 				{Key: "key1", Value: "value1", Exists: true},
 				{Key: "key2", Value: "value2", Exists: true},
 			},
@@ -1135,14 +1136,14 @@ func TestConcurrentMapWithTTL_GetBatch(t *testing.T) {
 		{
 			name: "get non-existent key",
 			keys: []string{"nonexistent"},
-			expected: []*BatchNode[string]{
+			expected: []*types.BatchNode[string]{
 				{Key: "nonexistent", Value: "", Exists: false},
 			},
 		},
 		{
 			name:     "empty keys list",
 			keys:     []string{},
-			expected: []*BatchNode[string]{},
+			expected: []*types.BatchNode[string]{},
 		},
 	}
 
@@ -1180,12 +1181,12 @@ func TestConcurrentMapWithTTL_GetBatchWithMetrics(t *testing.T) {
 	testCases := []struct {
 		name        string
 		keys        []string
-		checkResult func(t *testing.T, metrics []*Metric[string])
+		checkResult func(t *testing.T, metrics []*types.Metric[string])
 	}{
 		{
 			name: "check metrics for existing keys",
 			keys: []string{"key1", "key2"},
-			checkResult: func(t *testing.T, metrics []*Metric[string]) {
+			checkResult: func(t *testing.T, metrics []*types.Metric[string]) {
 				assert.Equal(t, 2, len(metrics))
 
 				// Check key1
@@ -1208,7 +1209,7 @@ func TestConcurrentMapWithTTL_GetBatchWithMetrics(t *testing.T) {
 		{
 			name: "check non-existent key",
 			keys: []string{"nonexistent"},
-			checkResult: func(t *testing.T, metrics []*Metric[string]) {
+			checkResult: func(t *testing.T, metrics []*types.Metric[string]) {
 				assert.Equal(t, 1, len(metrics))
 				assert.Equal(t, "nonexistent", metrics[0].Key)
 				assert.False(t, metrics[0].Exists)
@@ -1245,12 +1246,12 @@ func TestConcurrentMapWithTTL_DeleteBatch(t *testing.T) {
 	testCases := []struct {
 		name         string
 		keysToDelete []string
-		checkResult  func(t *testing.T, c ICacheInMemory[string])
+		checkResult  func(t *testing.T, c types.ICacheInMemory[string])
 	}{
 		{
 			name:         "delete existing keys",
 			keysToDelete: []string{"key1", "key2"},
-			checkResult: func(t *testing.T, c ICacheInMemory[string]) {
+			checkResult: func(t *testing.T, c types.ICacheInMemory[string]) {
 				// Verify keys are deleted
 				_, exists := c.Get("key1")
 				assert.False(t, exists)
@@ -1265,7 +1266,7 @@ func TestConcurrentMapWithTTL_DeleteBatch(t *testing.T) {
 		{
 			name:         "delete non-existent keys",
 			keysToDelete: []string{"nonexistent1", "nonexistent2"},
-			checkResult: func(t *testing.T, c ICacheInMemory[string]) {
+			checkResult: func(t *testing.T, c types.ICacheInMemory[string]) {
 				// Verify remaining key still exists
 				val, exists := c.Get("key3")
 				assert.True(t, exists)
@@ -1276,7 +1277,7 @@ func TestConcurrentMapWithTTL_DeleteBatch(t *testing.T) {
 		{
 			name:         "empty keys list",
 			keysToDelete: []string{},
-			checkResult: func(t *testing.T, c ICacheInMemory[string]) {
+			checkResult: func(t *testing.T, c types.ICacheInMemory[string]) {
 				assert.Equal(t, 1, c.Len())
 			},
 		},

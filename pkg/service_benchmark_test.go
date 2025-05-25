@@ -3,6 +3,7 @@ package pkg
 import (
 	"context"
 	"fmt"
+	"github.com/BarushevEA/in_memory_cache/types"
 	"math/rand/v2"
 	"runtime"
 	"testing"
@@ -14,7 +15,7 @@ import (
 // The function initializes multiple cache types and benchmarks their operations in both serial and parallel contexts.
 func BenchmarkCache(b *testing.B) {
 	ctx := context.Background()
-	caches := map[string]ICache[string]{
+	caches := map[string]types.ICacheInMemory[string]{
 		"ConcurrentCache": NewConcurrentCache[string](ctx, time.Second, time.Millisecond),
 		"ShardedCache":    NewShardedCache[string](ctx, time.Second, time.Millisecond),
 	}
@@ -50,7 +51,7 @@ func BenchmarkCache(b *testing.B) {
 // The benchmark uses 100,000 key-value pairs and measures performance with parallel access scenarios.
 func BenchmarkCache_LargeDataSet(b *testing.B) {
 	ctx := context.Background()
-	caches := map[string]ICache[string]{
+	caches := map[string]types.ICacheInMemory[string]{
 		"ConcurrentCache": NewConcurrentCache[string](ctx, time.Second, time.Millisecond),
 		"ShardedCache":    NewShardedCache[string](ctx, time.Second, time.Millisecond),
 	}
@@ -83,7 +84,7 @@ func BenchmarkCache_LargeDataSet(b *testing.B) {
 // BenchmarkCache_StressTest performs a stress test benchmarking various cache implementations using randomized operations.
 func BenchmarkCache_StressTest(b *testing.B) {
 	ctx := context.Background()
-	caches := map[string]ICache[string]{
+	caches := map[string]types.ICacheInMemory[string]{
 		"ConcurrentCache": NewConcurrentCache[string](ctx, time.Second, time.Millisecond),
 		"ShardedCache":    NewShardedCache[string](ctx, time.Second, time.Millisecond),
 	}
@@ -100,33 +101,33 @@ func BenchmarkCache_StressTest(b *testing.B) {
 	operations := []struct {
 		name     string
 		weight   int
-		function func(cache ICache[string], key string)
+		function func(cache types.ICacheInMemory[string], key string)
 	}{
 		{
 			name:   "Get",
 			weight: getWeight,
-			function: func(cache ICache[string], key string) {
+			function: func(cache types.ICacheInMemory[string], key string) {
 				_, _ = cache.Get(key)
 			},
 		},
 		{
 			name:   "Set",
 			weight: setWeight,
-			function: func(cache ICache[string], key string) {
+			function: func(cache types.ICacheInMemory[string], key string) {
 				_ = cache.Set(key, fmt.Sprintf("value-%s", key))
 			},
 		},
 		{
 			name:   "Delete",
 			weight: delWeight,
-			function: func(cache ICache[string], key string) {
+			function: func(cache types.ICacheInMemory[string], key string) {
 				cache.Delete(key)
 			},
 		},
 		{
 			name:   "Range",
 			weight: rangeWeight,
-			function: func(cache ICache[string], _ string) {
+			function: func(cache types.ICacheInMemory[string], _ string) {
 				_ = cache.Range(func(k string, v string) bool {
 					return true
 				})
@@ -161,7 +162,7 @@ func BenchmarkCache_StressTest(b *testing.B) {
 func weightedRandomChoice(operations []struct {
 	name     string
 	weight   int
-	function func(cache ICache[string], key string)
+	function func(cache types.ICacheInMemory[string], key string)
 }, r *rand.PCG) int {
 	totalWeight := 0
 	for _, op := range operations {
@@ -279,21 +280,21 @@ func BenchmarkCache_Operations(b *testing.B) {
 
 	operations := []struct {
 		name string
-		op   func(cache ICache[string], r *rand.PCG, prefix string)
+		op   func(cache types.ICacheInMemory[string], r *rand.PCG, prefix string)
 	}{
-		{"Set", func(cache ICache[string], r *rand.PCG, prefix string) {
+		{"Set", func(cache types.ICacheInMemory[string], r *rand.PCG, prefix string) {
 			key := fmt.Sprintf("%s%x", prefix, r.Uint64())
 			cache.Set(key, "new-value")
 		}},
-		{"Get", func(cache ICache[string], r *rand.PCG, prefix string) {
+		{"Get", func(cache types.ICacheInMemory[string], r *rand.PCG, prefix string) {
 			key := fmt.Sprintf("%s%x", prefix, r.Uint64())
 			cache.Get(key)
 		}},
-		{"Delete", func(cache ICache[string], r *rand.PCG, prefix string) {
+		{"Delete", func(cache types.ICacheInMemory[string], r *rand.PCG, prefix string) {
 			key := fmt.Sprintf("%s%x", prefix, r.Uint64())
 			cache.Delete(key)
 		}},
-		{"Range", func(cache ICache[string], _ *rand.PCG, _ string) {
+		{"Range", func(cache types.ICacheInMemory[string], _ *rand.PCG, _ string) {
 			cache.Range(func(k string, v string) bool {
 				return true
 			})

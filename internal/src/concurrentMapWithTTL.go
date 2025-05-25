@@ -3,6 +3,7 @@ package src
 import (
 	"context"
 	"errors"
+	"github.com/BarushevEA/in_memory_cache/types"
 	"sync"
 	"time"
 )
@@ -31,7 +32,7 @@ type rangeEntry[T any] struct {
 }
 
 // NewConcurrentMapWithTTL creates a new concurrent map with TTL support and starts a background TTL management goroutine.
-func NewConcurrentMapWithTTL[T any](ctx context.Context, ttl, ttlDecrement time.Duration) ICacheInMemory[T] {
+func NewConcurrentMapWithTTL[T any](ctx context.Context, ttl, ttlDecrement time.Duration) types.ICacheInMemory[T] {
 	cMap := &ConcurrentMapWithTTL[T]{}
 	cMap.data = make(map[string]IMapNode[T])
 	cMap.maxKeysForDeleteUsage = 10000
@@ -191,13 +192,13 @@ func (cMap *ConcurrentMapWithTTL[T]) GetNodeValueWithMetrics(key string) (T, tim
 
 // GetBatch retrieves a batch of values corresponding to the provided keys from the ConcurrentMapWithTTL.
 // It returns a slice of BatchNode containing the values, existence flags, or an error if the map is closed.
-func (cMap *ConcurrentMapWithTTL[T]) GetBatch(keys []string) ([]*BatchNode[T], error) {
+func (cMap *ConcurrentMapWithTTL[T]) GetBatch(keys []string) ([]*types.BatchNode[T], error) {
 	if cMap.isClosed {
 		return nil, errors.New("ConcurrentMapWithTTL.Get ERROR: cannot perform operation on closed cache")
 	}
-	batch := make([]*BatchNode[T], 0, len(keys))
+	batch := make([]*types.BatchNode[T], 0, len(keys))
 	for _, key := range keys {
-		node := &BatchNode[T]{}
+		node := &types.BatchNode[T]{}
 		node.Key = key
 		node.Value, node.Exists = cMap.Get(key)
 
@@ -207,14 +208,14 @@ func (cMap *ConcurrentMapWithTTL[T]) GetBatch(keys []string) ([]*BatchNode[T], e
 }
 
 // GetBatchWithMetrics retrieves detailed metrics for a batch of keys, returning a slice of Metric objects or an error.
-func (cMap *ConcurrentMapWithTTL[T]) GetBatchWithMetrics(keys []string) ([]*Metric[T], error) {
+func (cMap *ConcurrentMapWithTTL[T]) GetBatchWithMetrics(keys []string) ([]*types.Metric[T], error) {
 	if cMap.isClosed {
 		return nil, errors.New("ConcurrentMapWithTTL.Get ERROR: cannot perform operation on closed cache")
 	}
 
-	result := make([]*Metric[T], 0, len(keys))
+	result := make([]*types.Metric[T], 0, len(keys))
 	for _, key := range keys {
-		metric := &Metric[T]{}
+		metric := &types.Metric[T]{}
 		metric.Key = key
 
 		cMap.RLock()

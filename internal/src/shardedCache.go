@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"github.com/BarushevEA/in_memory_cache/internal/utils"
+	"github.com/BarushevEA/in_memory_cache/types"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -18,7 +19,7 @@ import (
 // Maintains internal synchronization to safely handle concurrent operations.
 // Once closed, the map discards all shards and prevents further operations.
 type DynamicShardedMapWithTTL[T any] struct {
-	shards    [256]*ICacheInMemory[T]
+	shards    [256]*types.ICacheInMemory[T]
 	ctx       context.Context
 	cancel    context.CancelFunc
 	ttl       time.Duration
@@ -32,7 +33,7 @@ type DynamicShardedMapWithTTL[T any] struct {
 // ttl specifies the time to live for cache entries before they expire.
 // decrement specifies the frequency of cleanup checks for expired keys, must be less than or equal to ttl.
 // Returns an implementation of ICacheInMemory[T].
-func NewDynamicShardedMapWithTTL[T any](ctx context.Context, ttl, decrement time.Duration) ICacheInMemory[T] {
+func NewDynamicShardedMapWithTTL[T any](ctx context.Context, ttl, decrement time.Duration) types.ICacheInMemory[T] {
 	if ttl <= 0 || decrement <= 0 || decrement > ttl {
 		ttl = 5 * time.Second
 		decrement = 1 * time.Second
@@ -50,8 +51,8 @@ func NewDynamicShardedMapWithTTL[T any](ctx context.Context, ttl, decrement time
 }
 
 // getShard returns the shard corresponding to the given hash, creating it if it doesn't already exist.
-func (shardMap *DynamicShardedMapWithTTL[T]) getShard(hash uint8) ICacheInMemory[T] {
-	shard := (*ICacheInMemory[T])(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&shardMap.shards[hash]))))
+func (shardMap *DynamicShardedMapWithTTL[T]) getShard(hash uint8) types.ICacheInMemory[T] {
+	shard := (*types.ICacheInMemory[T])(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&shardMap.shards[hash]))))
 	if shard != nil {
 		return *shard
 	}
@@ -60,7 +61,7 @@ func (shardMap *DynamicShardedMapWithTTL[T]) getShard(hash uint8) ICacheInMemory
 	mu.Lock()
 	defer mu.Unlock()
 
-	shard = (*ICacheInMemory[T])(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&shardMap.shards[hash]))))
+	shard = (*types.ICacheInMemory[T])(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&shardMap.shards[hash]))))
 	if shard != nil {
 		return *shard
 	}
@@ -134,14 +135,14 @@ func (shardMap *DynamicShardedMapWithTTL[T]) GetNodeValueWithMetrics(key string)
 }
 
 // GetBatch retrieves a batch of key-value pairs from the map for the provided keys. Returns error if the map is closed.
-func (shardMap *DynamicShardedMapWithTTL[T]) GetBatch(keys []string) ([]*BatchNode[T], error) {
+func (shardMap *DynamicShardedMapWithTTL[T]) GetBatch(keys []string) ([]*types.BatchNode[T], error) {
 	if shardMap.isClosed.Load() {
 		return nil, errors.New("cache is closed")
 	}
 
-	var batch = make([]*BatchNode[T], 0, len(keys))
+	var batch = make([]*types.BatchNode[T], 0, len(keys))
 	for _, key := range keys {
-		node := &BatchNode[T]{}
+		node := &types.BatchNode[T]{}
 		node.Key = key
 		node.Value, node.Exists = shardMap.Get(key)
 
@@ -153,14 +154,14 @@ func (shardMap *DynamicShardedMapWithTTL[T]) GetBatch(keys []string) ([]*BatchNo
 
 // GetBatchWithMetrics retrieves a batch of metrics for the given keys, including value, creation time, and access stats.
 // Returns an error if the map is closed.
-func (shardMap *DynamicShardedMapWithTTL[T]) GetBatchWithMetrics(keys []string) ([]*Metric[T], error) {
+func (shardMap *DynamicShardedMapWithTTL[T]) GetBatchWithMetrics(keys []string) ([]*types.Metric[T], error) {
 	if shardMap.isClosed.Load() {
 		return nil, errors.New("cache is closed")
 	}
 
-	var batch = make([]*Metric[T], 0, len(keys))
+	var batch = make([]*types.Metric[T], 0, len(keys))
 	for _, key := range keys {
-		node := &Metric[T]{}
+		node := &types.Metric[T]{}
 		node.Key = key
 		node.Value, node.TimeCreated, node.SetCount, node.GetCount, node.Exists = shardMap.GetNodeValueWithMetrics(key)
 
@@ -177,7 +178,7 @@ func (shardMap *DynamicShardedMapWithTTL[T]) Delete(key string) {
 	}
 
 	hash := utils.GetTopHash(key)
-	if shard := (*ICacheInMemory[T])(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&shardMap.shards[hash])))); shard != nil {
+	if shard := (*types.ICacheInMemory[T])(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&shardMap.shards[hash])))); shard != nil {
 		(*shard).Delete(key)
 	}
 }
@@ -200,7 +201,7 @@ func (shardMap *DynamicShardedMapWithTTL[T]) Clear() {
 	}
 
 	for i := range shardMap.shards {
-		if shard := (*ICacheInMemory[T])(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&shardMap.shards[i])))); shard != nil {
+		if shard := (*types.ICacheInMemory[T])(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&shardMap.shards[i])))); shard != nil {
 			(*shard).Clear()
 			atomic.StorePointer((*unsafe.Pointer)(unsafe.Pointer(&shardMap.shards[i])), nil)
 		}
@@ -216,7 +217,7 @@ func (shardMap *DynamicShardedMapWithTTL[T]) Len() int {
 
 	total := 0
 	for i := range shardMap.shards {
-		if shard := (*ICacheInMemory[T])(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&shardMap.shards[i])))); shard != nil {
+		if shard := (*types.ICacheInMemory[T])(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&shardMap.shards[i])))); shard != nil {
 			total += (*shard).Len()
 		}
 	}
@@ -231,7 +232,7 @@ func (shardMap *DynamicShardedMapWithTTL[T]) Range(callback func(key string, val
 	}
 
 	for i := range shardMap.shards {
-		if shard := (*ICacheInMemory[T])(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&shardMap.shards[i])))); shard != nil {
+		if shard := (*types.ICacheInMemory[T])(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&shardMap.shards[i])))); shard != nil {
 			if err := (*shard).Range(callback); err != nil {
 				return err
 			}
@@ -246,7 +247,7 @@ func (shardMap *DynamicShardedMapWithTTL[T]) RangeWithMetrics(callback func(key 
 	}
 
 	for i := range shardMap.shards {
-		if shard := (*ICacheInMemory[T])(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&shardMap.shards[i])))); shard != nil {
+		if shard := (*types.ICacheInMemory[T])(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&shardMap.shards[i])))); shard != nil {
 			if err := (*shard).RangeWithMetrics(callback); err != nil {
 				return err
 			}
