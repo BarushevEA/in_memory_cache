@@ -187,3 +187,140 @@ func BenchmarkStringParallelAccess(b *testing.B) {
 		})
 	})
 }
+
+func BenchmarkStringDeletionOperations(b *testing.B) {
+	ctx := context.Background()
+	ttl := 1 * time.Second
+	ttlDecrement := 100 * time.Millisecond
+
+	testData := generateRandomString(1024)
+	testDataBytes := []byte(testData)
+
+	bigcacheConfig := bigcache.DefaultConfig(ttl)
+	bigcacheConfig.Verbose = false
+	bigcacheConfig.Logger = nil
+	bigCache, _ := bigcache.New(ctx, bigcacheConfig)
+
+	freeCache := freecache.NewCache(1024 * 1024 * 10)
+	concurrentCache := NewConcurrentCache[string](ctx, ttl, ttlDecrement)
+	shardedCache := NewShardedCache[string](ctx, ttl, ttlDecrement)
+
+	// Предварительное заполнение кэшей
+	for i := 0; i < 1000; i++ {
+		key := fmt.Sprintf("key-%d", i)
+		concurrentCache.Set(key, testData)
+		shardedCache.Set(key, testData)
+		bigCache.Set(key, testDataBytes)
+		freeCache.Set([]byte(key), testDataBytes, int(ttl.Seconds()))
+	}
+
+	benchmarks := []struct {
+		name string
+		fn   func(b *testing.B)
+	}{
+		{
+			name: "ConcurrentCache_Delete",
+			fn: func(b *testing.B) {
+				for i := 0; i < b.N; i++ {
+					concurrentCache.Delete(fmt.Sprintf("key-%d", i%1000))
+				}
+			},
+		},
+		{
+			name: "ShardedCache_Delete",
+			fn: func(b *testing.B) {
+				for i := 0; i < b.N; i++ {
+					shardedCache.Delete(fmt.Sprintf("key-%d", i%1000))
+				}
+			},
+		},
+		{
+			name: "BigCache_Delete",
+			fn: func(b *testing.B) {
+				for i := 0; i < b.N; i++ {
+					_ = bigCache.Delete(fmt.Sprintf("key-%d", i%1000))
+				}
+			},
+		},
+		{
+			name: "FreeCache_Delete",
+			fn: func(b *testing.B) {
+				for i := 0; i < b.N; i++ {
+					_ = freeCache.Del([]byte(fmt.Sprintf("key-%d", i%1000)))
+				}
+			},
+		},
+	}
+
+	for _, bm := range benchmarks {
+		b.Run(bm.name, bm.fn)
+	}
+}
+
+// Добавим также тест на параллельное удаление
+func BenchmarkStringParallelDelete(b *testing.B) {
+	ctx := context.Background()
+	ttl := 1 * time.Second
+	ttlDecrement := 100 * time.Millisecond
+
+	testData := generateRandomString(1024)
+	testDataBytes := []byte(testData)
+
+	bigcacheConfig := bigcache.DefaultConfig(ttl)
+	bigcacheConfig.Verbose = false
+	bigcacheConfig.Logger = nil
+	bigCache, _ := bigcache.New(ctx, bigcacheConfig)
+
+	freeCache := freecache.NewCache(1024 * 1024 * 10)
+	concurrentCache := NewConcurrentCache[string](ctx, ttl, ttlDecrement)
+	shardedCache := NewShardedCache[string](ctx, ttl, ttlDecrement)
+
+	// Предварительное заполнение
+	for i := 0; i < 1000; i++ {
+		key := fmt.Sprintf("key-%d", i)
+		concurrentCache.Set(key, testData)
+		shardedCache.Set(key, testData)
+		bigCache.Set(key, testDataBytes)
+		freeCache.Set([]byte(key), testDataBytes, int(ttl.Seconds()))
+	}
+
+	b.Run("ConcurrentCache_ParallelDelete", func(b *testing.B) {
+		b.RunParallel(func(pb *testing.PB) {
+			i := 0
+			for pb.Next() {
+				concurrentCache.Delete(fmt.Sprintf("key-%d", i%1000))
+				i++
+			}
+		})
+	})
+
+	b.Run("ShardedCache_ParallelDelete", func(b *testing.B) {
+		b.RunParallel(func(pb *testing.PB) {
+			i := 0
+			for pb.Next() {
+				shardedCache.Delete(fmt.Sprintf("key-%d", i%1000))
+				i++
+			}
+		})
+	})
+
+	b.Run("BigCache_ParallelDelete", func(b *testing.B) {
+		b.RunParallel(func(pb *testing.PB) {
+			i := 0
+			for pb.Next() {
+				_ = bigCache.Delete(fmt.Sprintf("key-%d", i%1000))
+				i++
+			}
+		})
+	})
+
+	b.Run("FreeCache_ParallelDelete", func(b *testing.B) {
+		b.RunParallel(func(pb *testing.PB) {
+			i := 0
+			for pb.Next() {
+				_ = freeCache.Del([]byte(fmt.Sprintf("key-%d", i%1000)))
+				i++
+			}
+		})
+	})
+}
