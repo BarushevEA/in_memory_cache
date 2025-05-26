@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"github.com/BarushevEA/in_memory_cache/types"
+	"runtime"
 	"sync"
 	"time"
 )
@@ -263,17 +264,24 @@ func (cMap *ConcurrentMapWithTTL[T]) DeleteBatch(keys []string) {
 		return
 	}
 
+	deletionsCount := 0
+
 	for _, key := range keys {
 		cMap.Lock()
 		node, ok := cMap.data[key]
 		if ok {
 			delete(cMap.data, key)
+			deletionsCount++
 		}
 		cMap.Unlock()
 
 		if ok {
 			node.Clear()
 		}
+	}
+
+	if deletionsCount > 0 && deletionsCount%10 == 0 {
+		runtime.GC()
 	}
 }
 
