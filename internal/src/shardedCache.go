@@ -92,8 +92,9 @@ func (shardMap *DynamicShardedMapWithTTL[T]) SetBatch(batch map[string]T) error 
 	}
 
 	for key, value := range batch {
-		err := shardMap.Set(key, value)
-		if err != nil {
+		hash := utils.GetTopHash(key)
+		shard := shardMap.getShard(hash)
+		if err := shard.Set(key, value); err != nil {
 			return err
 		}
 	}
@@ -189,18 +190,12 @@ func (shardMap *DynamicShardedMapWithTTL[T]) DeleteBatch(keys []string) {
 		return
 	}
 
-	//operationsCount := 0
-
 	for _, key := range keys {
-		shardMap.Delete(key)
-		//operationsCount++
-
-		//if operationsCount%1000 == 0 {
-		//	runtime.GC()
-		//}
+		hash := utils.GetTopHash(key)
+		if shard := (*types.ICacheInMemory[T])(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&shardMap.shards[hash])))); shard != nil {
+			(*shard).Delete(key)
+		}
 	}
-
-	//runtime.GC()
 }
 
 // Clear removes all data from the map, clears underlying shards, and cancels the internal context, marking the map as closed.
