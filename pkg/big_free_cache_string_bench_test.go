@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/BarushevEA/in_memory_cache/types"
 	"github.com/allegro/bigcache/v3"
 	"github.com/coocood/freecache"
 	"testing"
@@ -323,4 +324,102 @@ func BenchmarkStringParallelDelete(b *testing.B) {
 			}
 		})
 	})
+}
+
+func BenchmarkSingleVsBatchOperations(b *testing.B) {
+	type TestStruct struct {
+		ID    int
+		Value string
+		Data  []byte
+	}
+
+	ctx := context.Background()
+	ttl := 5 * time.Minute
+	ttlDecrement := 1 * time.Second
+	batchSizes := []int{10, 100, 1000, 10000}
+
+	for _, implementation := range []struct {
+		name     string
+		newCache func(context.Context, time.Duration, time.Duration) types.ICacheInMemory[*TestStruct]
+	}{
+		{"ConcurrentCache", NewConcurrentCache[*TestStruct]},
+		{"ShardedCache", NewShardedCache[*TestStruct]},
+	} {
+		b.Run(implementation.name, func(b *testing.B) {
+			for _, size := range batchSizes {
+				cache := implementation.newCache(ctx, ttl, ttlDecrement)
+
+				// Подготовка данных
+				batchData := make(map[string]*TestStruct, size)
+				keys := make([]string, 0, size)
+				for i := 0; i < size; i++ {
+					key := fmt.Sprintf("key-%d", i)
+					keys = append(keys, key)
+					batchData[key] = &TestStruct{
+						ID:    i,
+						Value: fmt.Sprintf("value-%d", i),
+						Data:  make([]byte, 100),
+					}
+				}
+
+				// Тест операций записи
+				b.Run(fmt.Sprintf("Set_%d/Single", size), func(b *testing.B) {
+					b.ResetTimer()
+					for i := 0; i < b.N; i++ {
+						for k, v := range batchData {
+							_ = cache.Set(k, v)
+						}
+					}
+				})
+
+				b.Run(fmt.Sprintf("Set_%d/Batch", size), func(b *testing.B) {
+					b.ResetTimer()
+					for i := 0; i < b.N; i++ {
+						_ = cache.SetBatch(batchData)
+					}
+				})
+
+				// Предварительное заполнение для тестов чтения
+				_ = cache.SetBatch(batchData)
+
+				// Тест операций чтения
+				b.Run(fmt.Sprintf("Get_%d/Single", size), func(b *testing.B) {
+					b.ResetTimer()
+					for i := 0; i < b.N; i++ {
+						for _, k := range keys {
+							_, _ = cache.Get(k)
+						}
+					}
+				})
+
+				b.Run(fmt.Sprintf("Get_%d/Batch", size), func(b *testing.B) {
+					b.ResetTimer()
+					for i := 0; i < b.N; i++ {
+						_, _ = cache.GetBatch(keys)
+					}
+				})
+
+				// Тест операций удаления
+				b.Run(fmt.Sprintf("Delete_%d/Single", size), func(b *testing.B) {
+					for i := 0; i < b.N; i++ {
+						b.StopTimer()
+						_ = cache.SetBatch(batchData)
+						b.StartTimer()
+						for _, k := range keys {
+							cache.Delete(k)
+						}
+					}
+				})
+
+				b.Run(fmt.Sprintf("Delete_%d/Batch", size), func(b *testing.B) {
+					for i := 0; i < b.N; i++ {
+						b.StopTimer()
+						_ = cache.SetBatch(batchData)
+						b.StartTimer()
+						cache.DeleteBatch(keys)
+					}
+				})
+			}
+		})
+	}
 }

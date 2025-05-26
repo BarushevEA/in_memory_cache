@@ -5,7 +5,6 @@ import (
 	"errors"
 	"github.com/BarushevEA/in_memory_cache/internal/utils"
 	"github.com/BarushevEA/in_memory_cache/types"
-	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -190,18 +189,18 @@ func (shardMap *DynamicShardedMapWithTTL[T]) DeleteBatch(keys []string) {
 		return
 	}
 
-	operationsCount := 0
+	//operationsCount := 0
 
 	for _, key := range keys {
 		shardMap.Delete(key)
-		operationsCount++
+		//operationsCount++
 
-		if operationsCount%1000 == 0 {
-			runtime.GC()
-		}
+		//if operationsCount%1000 == 0 {
+		//	runtime.GC()
+		//}
 	}
 
-	runtime.GC()
+	//runtime.GC()
 }
 
 // Clear removes all data from the map, clears underlying shards, and cancels the internal context, marking the map as closed.

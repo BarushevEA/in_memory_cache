@@ -24,6 +24,7 @@ type ConcurrentMapWithTTL[T any] struct {
 	keysForDeleteSync     sync.Mutex
 	maxKeysForDeleteUsage int
 	maxKeysForDeleteCount int
+	deleteCount           int
 }
 
 // rangeEntry represents a key-value entry with a key of type string and a node implementing the IMapNode interface.
@@ -197,14 +198,18 @@ func (cMap *ConcurrentMapWithTTL[T]) GetBatch(keys []string) ([]*types.BatchNode
 	if cMap.isClosed {
 		return nil, errors.New("ConcurrentMapWithTTL.Get ERROR: cannot perform operation on closed cache")
 	}
-	batch := make([]*types.BatchNode[T], 0, len(keys))
-	for _, key := range keys {
-		node := &types.BatchNode[T]{}
-		node.Key = key
-		node.Value, node.Exists = cMap.Get(key)
 
-		batch = append(batch, node)
+	batch := make([]*types.BatchNode[T], len(keys))
+	cMap.RLock()
+	for i, key := range keys {
+		batch[i] = &types.BatchNode[T]{Key: key}
+		if mapNode, ok := cMap.data[key]; ok {
+			batch[i].Value = mapNode.GetData()
+			batch[i].Exists = true
+		}
 	}
+	cMap.RUnlock()
+
 	return batch, nil
 }
 
@@ -255,6 +260,11 @@ func (cMap *ConcurrentMapWithTTL[T]) Delete(key string) {
 
 	if ok {
 		node.Clear()
+		cMap.deleteCount++
+		if cMap.deleteCount > 1000 {
+			runtime.GC()
+			cMap.deleteCount = 0
+		}
 	}
 }
 
