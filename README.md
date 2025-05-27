@@ -196,16 +196,6 @@ Both cache types feature automatic TTL management:
     - Monitor operation execution time
     - Keep track of cache item count
 
-## Benchmarking
-
-Our benchmarks show that:
-- ShardedCache excels in parallel workloads
-- ConcurrentCache provides stable read performance
-- Both implementations outperform standard map with mutex
-- Memory usage scales efficiently with data size
-
-> Note: Run your own benchmarks to validate performance in your specific use case
-
 ## Thread Safety
 
 Both implementations provide comprehensive thread safety:
@@ -241,3 +231,34 @@ The library implements robust error handling:
     - Choose appropriate cache size
     - Balance between memory and performance
     - Consider your access patterns
+
+## Performance Comparison
+
+Based on extensive benchmarking against popular caching solutions (BigCache and FreeCache), our implementations show the following characteristics:
+
+### ShardedCache
+- **Parallel Operations**: Significantly outperforms other solutions in concurrent access scenarios
+- **Memory Efficiency**: Comparable memory allocations to FreeCache, much lower than BigCache
+- **Read Operations**: Fast read access, performance close to BigCache
+- **Write Operations**: Better performance than BigCache, competitive with FreeCache
+- **Delete Operations**: Equivalent performance to other solutions
+- **Best Use Case**: High-concurrency environments with frequent parallel access
+
+### ConcurrentCache
+- **Sequential Operations**: Shows stable performance for both read and write operations
+- **Read Operations**: Consistent read times, optimized for sequential access patterns
+- **Write Operations**: Faster writes compared to BigCache, slightly slower than FreeCache
+- **Memory Usage**: Efficient memory allocation pattern with minimal overhead
+- **Predictable Latency**: More consistent operation times compared to sharded solutions
+- **Delete Operations**: Comparable performance to other implementations
+- **Best Use Case**: Scenarios requiring predictable performance and simple debugging
+
+Both implementations show competitive performance compared to established solutions while providing additional benefits:
+- Generic type support without serialization overhead
+- Built-in TTL management
+- Comprehensive metrics
+- Zero external dependencies
+- Memory usage scales efficiently with data size
+- Both outperform standard map with mutex
+
+> Note: Performance characteristics may vary depending on hardware, workload patterns, and system configuration. We encourage running benchmarks in your specific environment.
