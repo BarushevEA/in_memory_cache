@@ -262,3 +262,51 @@ Both implementations show competitive performance compared to established soluti
 - Both outperform standard map with mutex
 
 > Note: Performance characteristics may vary depending on hardware, workload patterns, and system configuration. We encourage running benchmarks in your specific environment.
+
+## API Reference
+
+The cache implementations provide thread-safe operations through the `ICacheInMemory[T]` interface.
+
+### Basic Operations
+
+| Method | Description | Performance Notes |
+|--------|-------------|------------------|
+| `Set(key string, value T) error` | Stores a value | Thread-safe|
+| `Get(key string) (T, bool)` | Retrieves a value | Thread-safe|
+| `Delete(key string)` | Removes an entry | Thread-safe|
+| `Clear()` | Removes all entries | Thread-safe |
+| `Len() int` | Returns entry count | Thread-safe|
+
+### Batch Operations
+
+| Method | Description | Performance Notes |
+|--------|-------------|------------------|
+| `SetBatch(batch map[string]T) error` | Bulk insertion | Significantly faster in ShardedCache due to shard distribution. Similar to sequential operations in ConcurrentCache |
+| `GetBatch(keys []string) ([]*BatchNode[T], error)` | Bulk retrieval | Slightly slower than sequential Get operations |
+| `DeleteBatch(keys []string)` | Bulk deletion | Slightly slower than sequential Delete operations |
+
+### Metrics Operations
+
+| Method | Description | Return Values |
+|--------|-------------|---------------|
+| `GetNodeValueWithMetrics(key string)` | Get value with metrics | Returns: value, creation time, set count, get count, exists flag |
+| `GetBatchWithMetrics(keys []string)` | Bulk get with metrics | Returns array of metrics including creation time and access counts |
+
+### Iteration
+
+| Method | Description | Usage |
+|--------|-------------|-------|
+| `Range(func(key string, value T) bool)` | Basic iteration | Return false to stop iteration |
+| `RangeWithMetrics(func(key string, value T, createdAt time.Time, setCount uint32, getCount uint32) bool)` | Advanced iteration | Includes creation time and access counts |
+
+### Performance Notes
+
+- **ShardedCache**:
+   - `SetBatch` significantly outperforms sequential operations
+   - Optimized for high concurrency and parallel operations
+   - Best for large datasets with frequent parallel access
+
+- **ConcurrentCache**:
+   - Batch operations perform similarly to sequential ones
+   - Optimized for sequential access patterns
+   - Better for predictable performance requirements
