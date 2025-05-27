@@ -69,22 +69,39 @@ Both cache implementations feature an advanced TTL (Time-To-Live) system:
 
 ### Basic Usage
 
+```shell
+go get -u github.com/BarushevEA/in_memory_cache
+```
+
 ```go
-// Create 
-cache ctx := context.Background() 
-cache := NewShardedCache[string](ctx, 5 * time.Minute, 1 * time.Minute)
+import (
+"context"
+"github.com/BarushevEA/in_memory_cache/pkg"
+"time"
 
-// Basic operations 
-cache.Set("key", "value") 
-value, exists := cache.Get("key") 
-cache.Delete("key")
+...
+)
 
-// Iterate over elements 
-cache.Range(func(key string, value string) bool { 
-//Process key-value pair return true 
-//continue iteration 
-	return true // Continue iteration, false - iteration will stop
-})
+func main() {
+	// Create 
+	ctx := context.Background()
+	cache := pkg.NewShardedCache[string](
+		ctx, // context to manage cache lifecycle
+		5 * time.Minute, // TTL - time to live for each cache entry 
+		1 * time.Minute) // cleanup interval for expired entries
+
+// Basic operations
+	cache.Set("key", "value")
+	value, exists := cache.Get("key")
+	cache.Delete("key")
+	
+	// Iterate over elements 
+	cache.Range(func(key string, value string) bool {
+		//Process key-value pair return true
+		//continue iteration 
+		return true // Continue iteration, false - iteration will stop
+	})
+}
 ```
 
 ### With Custom Type
