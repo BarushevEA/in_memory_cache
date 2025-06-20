@@ -16,7 +16,7 @@ type MapNode[T any] struct {
 }
 
 // NewMapNode creates a new instance of a MapNode with the given data, returning it as an implementation of IMapNode.
-func NewMapNode[T any](data T) IMapNode[T] {
+func NewMapNode[T any](data T) *MapNode[T] {
 	node := &MapNode[T]{}
 	node.data = data
 	node.createdAt = time.Now()
@@ -51,7 +51,7 @@ func (node *MapNode[T]) Tick() {
 	}
 
 	node.remove()
-	node.remove = nil
+	node.Clear()
 }
 
 // GetData resets the node's duration to its ttl value and returns the data stored in the node.

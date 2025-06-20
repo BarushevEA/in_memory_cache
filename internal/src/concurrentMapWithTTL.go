@@ -12,7 +12,7 @@ import (
 // ConcurrentMapWithTTL provides a thread-safe map with support for time-to-live (TTL) for its entries.
 type ConcurrentMapWithTTL[T any] struct {
 	sync.RWMutex
-	data         map[string]IMapNode[T]
+	data         map[string]*MapNode[T]
 	ctx          context.Context
 	cancel       context.CancelFunc
 	ttl          time.Duration
@@ -30,13 +30,13 @@ type ConcurrentMapWithTTL[T any] struct {
 // rangeEntry represents a key-value entry with a key of type string and a node implementing the IMapNode interface.
 type rangeEntry[T any] struct {
 	key  string
-	node IMapNode[T]
+	node *MapNode[T]
 }
 
 // NewConcurrentMapWithTTL creates a new concurrent map with TTL support and starts a background TTL management goroutine.
 func NewConcurrentMapWithTTL[T any](ctx context.Context, ttl, ttlDecrement time.Duration) types.ICacheInMemory[T] {
 	cMap := &ConcurrentMapWithTTL[T]{}
-	cMap.data = make(map[string]IMapNode[T])
+	cMap.data = make(map[string]*MapNode[T])
 	cMap.maxKeysForDeleteUsage = 10000
 	cMap.keysForDelete = make([]string, 100, cMap.maxKeysForDeleteUsage)
 	cMap.ctx, cMap.cancel = context.WithCancel(ctx)
@@ -308,7 +308,7 @@ func (cMap *ConcurrentMapWithTTL[T]) Clear() {
 		node.Clear()
 		delete(cMap.data, key)
 	}
-	cMap.data = make(map[string]IMapNode[T])
+	cMap.data = make(map[string]*MapNode[T])
 
 	cMap.cancel()
 	cMap.Unlock()
