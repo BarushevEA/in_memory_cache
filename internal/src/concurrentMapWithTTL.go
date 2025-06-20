@@ -67,6 +67,10 @@ func (cMap *ConcurrentMapWithTTL[T]) Range(callback func(key string, value T) bo
 	cMap.RUnlock()
 
 	for _, entry := range entries {
+		if entry.node.remove == nil {
+			continue
+		}
+
 		if !callback(entry.key, entry.node.GetData()) {
 			return nil
 		}
@@ -90,6 +94,10 @@ func (cMap *ConcurrentMapWithTTL[T]) RangeWithMetrics(callback func(key string, 
 	cMap.RUnlock()
 
 	for _, entry := range entries {
+		if entry.node.remove == nil {
+			continue
+		}
+
 		value, createdAt, setCount, getCount := entry.node.GetDataWithMetrics()
 		if !callback(entry.key, value, createdAt, setCount, getCount) {
 			return nil
