@@ -267,7 +267,9 @@ func (cMap *ConcurrentMapWithTTL[T]) Delete(key string) {
 	cMap.Unlock()
 
 	if ok {
-		node.Clear()
+		if node.remove != nil {
+			node.Clear()
+		}
 		cMap.deleteCount++
 		if cMap.deleteCount > 1000 {
 			runtime.GC()
