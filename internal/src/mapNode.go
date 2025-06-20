@@ -42,10 +42,6 @@ func (node *MapNode[T]) SetTTLDecrement(ttlDecrement time.Duration) {
 
 // Tick decreases the node's remaining time-to-live by the decrement value and invokes the removal callback if expired.
 func (node *MapNode[T]) Tick() {
-	if node.ttlDecrement == 0 {
-		return
-	}
-
 	node.duration -= node.ttlDecrement
 	if node.duration > 0 {
 		return
@@ -55,6 +51,7 @@ func (node *MapNode[T]) Tick() {
 	}
 
 	node.remove()
+	node.Clear()
 }
 
 // GetData resets the node's duration to its ttl value and returns the data stored in the node.

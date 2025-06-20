@@ -91,7 +91,7 @@ func TestMapNode_Tick(t *testing.T) {
 			assert.Equal(t, tc.expDuration, node.duration, "duration should match after tick")
 
 			if tc.shouldRemove {
-				assert.True(t, callbackCalled, "remove callback should be called")
+				assert.Nil(t, node.remove, "remove callback should be nil after expiration")
 			} else {
 				assert.False(t, callbackCalled, "remove callback should not be called")
 			}
