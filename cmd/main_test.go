@@ -11,20 +11,20 @@ import (
 	"time"
 )
 
-// SafeMap представляет потокобезопасную обертку над map
+// SafeMap is a threadsafe map that provides synchronized access to a map of string keys and string values.
 type SafeMap struct {
 	sync.RWMutex
 	data map[string]string
 }
 
-// NewSafeMap создает новый экземпляр SafeMap
+// NewSafeMap creates and returns a new instance of SafeMap with an initialized internal map.
 func NewSafeMap() *SafeMap {
 	return &SafeMap{
 		data: make(map[string]string),
 	}
 }
 
-// Set добавляет значение в мапу
+// Set adds or updates a key-value pair in the SafeMap with thread-safe locking.
 func (s *SafeMap) Set(key string, value string) error {
 	s.Lock()
 	defer s.Unlock()
@@ -32,13 +32,14 @@ func (s *SafeMap) Set(key string, value string) error {
 	return nil
 }
 
-// Len возвращает количество элементов в мапе
+// Len returns the number of key-value pairs currently stored in the SafeMap. It employs a read lock for thread safety.
 func (s *SafeMap) Len() int {
 	s.RLock()
 	defer s.RUnlock()
 	return len(s.data)
 }
 
+// Get retrieves the value associated with the provided key and a boolean indicating if the key exists in the map.
 func (m *SafeMap) Get(key string) (string, bool) {
 	m.RLock()
 	defer m.RUnlock()
@@ -46,14 +47,17 @@ func (m *SafeMap) Get(key string) (string, bool) {
 	return val, ok
 }
 
+// generateKey generates a string key by concatenating "key-" with the string representation of the given integer.
 func generateKey(i int) string {
 	return "key-" + strconv.Itoa(i)
 }
 
+// generateValue generates a value string by appending the integer input to the prefix "value-".
 func generateValue(i int) string {
 	return "value-" + strconv.Itoa(i)
 }
 
+// BenchmarkCaches benchmarks multiple caching implementations for read, write, and mixed operations using the testing framework.
 func BenchmarkCaches(b *testing.B) {
 	ctx := context.Background()
 	ttl := 5 * time.Minute
@@ -69,7 +73,6 @@ func BenchmarkCaches(b *testing.B) {
 	shardedCache := pkg.NewShardedCache[string](ctx, ttl, ttlDecrement)
 	concurrentCache := pkg.NewConcurrentCache[string](ctx, ttl, ttlDecrement)
 
-	// Предварительное заполнение кешей данными для тестов чтения
 	for i := 0; i < 1000; i++ {
 		key, value := generateKey(i), generateValue(i)
 		standardMap.Set(key, value)
