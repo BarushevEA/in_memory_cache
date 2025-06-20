@@ -51,7 +51,7 @@ func (node *MapNode[T]) Tick() {
 	}
 
 	node.remove()
-	node.Clear()
+	node.remove = nil
 }
 
 // GetData resets the node's duration to its ttl value and returns the data stored in the node.
