@@ -23,8 +23,6 @@ type ConcurrentMapWithTTL[T any] struct {
 	keysForDelete         map[string]struct{}
 	keysForDeleteSync     sync.RWMutex
 	maxKeysForDeleteUsage int
-	//maxKeysForDeleteCount int
-	//deleteCount           int
 }
 
 // rangeEntry represents a key-value entry with a key of type string and a node implementing the IMapNode interface.
@@ -143,7 +141,6 @@ func (cMap *ConcurrentMapWithTTL[T]) markForDelete(key string, node *MapNode[T])
 	node.isDeleted.Store(true)
 	cMap.keysForDeleteSync.Lock()
 	cMap.keysForDelete[key] = struct{}{}
-	//cMap.maxKeysForDeleteCount++
 	cMap.keysForDeleteSync.Unlock()
 }
 
@@ -270,24 +267,6 @@ func (cMap *ConcurrentMapWithTTL[T]) Delete(key string) {
 		cMap.markForDelete(key, node)
 	}
 	cMap.RUnlock()
-	//
-	//cMap.Lock()
-	//node, ok := cMap.data[key]
-	//if ok {
-	//	delete(cMap.data, key)
-	//}
-	//cMap.Unlock()
-	//
-	//if ok {
-	//	if node.remove != nil {
-	//		node.Clear()
-	//	}
-	//	cMap.deleteCount++
-	//	if cMap.deleteCount > 1000 {
-	//		runtime.GC()
-	//		cMap.deleteCount = 0
-	//	}
-	//}
 }
 
 // DeleteBatch removes multiple keys and their associated data from the map. Clears each node before deletion if it exists.
@@ -321,8 +300,6 @@ func (cMap *ConcurrentMapWithTTL[T]) Clear() {
 
 	cMap.keysForDeleteSync.Lock()
 	cMap.keysForDelete = make(map[string]struct{}, cMap.maxKeysForDeleteUsage)
-	//cMap.maxKeysForDeleteCount = 0
-	//cMap.deleteCount = 0
 	cMap.tickerOnce = sync.Once{}
 	cMap.keysForDeleteSync.Unlock()
 }
@@ -405,8 +382,6 @@ func (cMap *ConcurrentMapWithTTL[T]) tickCollection() {
 
 				cMap.keysForDeleteSync.Lock()
 				cMap.keysForDelete = make(map[string]struct{}, cMap.maxKeysForDeleteUsage)
-				//cMap.maxKeysForDeleteCount = 0
-				//cMap.deleteCount = 0
 				cMap.keysForDeleteSync.Unlock()
 			}
 
