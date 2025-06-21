@@ -20,6 +20,10 @@ type ConcurrentMapWithTTL[T any] struct {
 	isClosed     atomic.Bool
 	tickerOnce   sync.Once
 
+	nodeBuffer        []*MapNode[T]
+	nodeBufferLock    sync.RWMutex
+	maxNodeBufferSize int
+
 	keysForDelete         map[string]struct{}
 	keysForDeleteSync     sync.RWMutex
 	maxKeysForDeleteUsage int
@@ -41,6 +45,8 @@ func NewConcurrentMapWithTTL[T any](ctx context.Context, ttl, ttlDecrement time.
 	cMap.ttl = ttl
 	cMap.ttlDecrement = ttlDecrement
 	cMap.isClosed.Store(false)
+	cMap.maxNodeBufferSize = 10000
+	cMap.nodeBuffer = make([]*MapNode[T], 0, cMap.maxNodeBufferSize)
 
 	if ttl <= 0 || ttlDecrement <= 0 || ttlDecrement > ttl {
 		cMap.ttl = 5 * time.Second
@@ -130,7 +136,7 @@ func (cMap *ConcurrentMapWithTTL[T]) Set(key string, value T) error {
 		return nil
 	}
 
-	newNode := NewMapNode[T](value)
+	newNode := cMap.getNode(value)
 	newNode.SetTTL(cMap.ttl)
 	newNode.SetTTLDecrement(cMap.ttlDecrement)
 	newNode.SetRemoveCallback(func() {
@@ -144,6 +150,18 @@ func (cMap *ConcurrentMapWithTTL[T]) Set(key string, value T) error {
 	cMap.Unlock()
 
 	return nil
+}
+
+func (cMap *ConcurrentMapWithTTL[T]) getNode(value T) *MapNode[T] {
+	cMap.nodeBufferLock.RLock()
+	if len(cMap.nodeBuffer) > 0 {
+		node := cMap.nodeBuffer[0]
+		cMap.nodeBuffer = cMap.nodeBuffer[1:]
+		cMap.nodeBufferLock.RUnlock()
+		return node
+	}
+	cMap.nodeBufferLock.RUnlock()
+	return NewMapNode[T](value)
 }
 
 func (cMap *ConcurrentMapWithTTL[T]) markForDelete(key string, node *MapNode[T]) {
@@ -386,6 +404,11 @@ func (cMap *ConcurrentMapWithTTL[T]) tickCollection() {
 					if ok && node.IsDeleted() {
 						delete(cMap.data, key)
 						node.Clear()
+						if len(cMap.nodeBuffer) < cMap.maxNodeBufferSize {
+							cMap.nodeBufferLock.Lock()
+							cMap.nodeBuffer = append(cMap.nodeBuffer, node)
+							cMap.nodeBufferLock.Unlock()
+						}
 					}
 				}
 				cMap.Unlock()
