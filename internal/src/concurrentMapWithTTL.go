@@ -120,7 +120,14 @@ func (cMap *ConcurrentMapWithTTL[T]) Set(key string, value T) error {
 		cMap.Unlock()
 		return nil
 	} else if ok {
-		node.Clear()
+		node.reset(value)
+		node.SetTTL(cMap.ttl)
+		node.SetTTLDecrement(cMap.ttlDecrement)
+		node.SetRemoveCallback(func() {
+			cMap.markForDelete(key, node)
+		})
+		cMap.Unlock()
+		return nil
 	}
 
 	newNode := NewMapNode[T](value)
@@ -376,7 +383,7 @@ func (cMap *ConcurrentMapWithTTL[T]) tickCollection() {
 				cMap.Lock()
 				for _, key := range deletedKeys {
 					node, ok := cMap.data[key]
-					if ok {
+					if ok && node.IsDeleted() {
 						delete(cMap.data, key)
 						node.Clear()
 					}

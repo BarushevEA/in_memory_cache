@@ -23,11 +23,16 @@ type MapNode[T any] struct {
 // NewMapNode creates a new instance of a MapNode with the given data, returning it as an implementation of IMapNode.
 func NewMapNode[T any](data T) *MapNode[T] {
 	node := &MapNode[T]{}
+	node.reset(data)
+	return node
+}
+
+func (node *MapNode[T]) reset(data T) {
 	node.data = data
 	node.createdAt = time.Now()
 	node.setCount = 1
+	node.getCount = 0
 	node.isDeleted.Store(false)
-	return node
 }
 
 // SetRemoveCallback sets the callback function to be invoked when the node needs to be removed due to TTL expiration.
