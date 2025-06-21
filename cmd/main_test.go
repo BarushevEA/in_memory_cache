@@ -5,6 +5,7 @@ import (
 	"github.com/BarushevEA/in_memory_cache/pkg"
 	"github.com/allegro/bigcache/v3"
 	"github.com/coocood/freecache"
+	"github.com/patrickmn/go-cache"
 	"strconv"
 	"sync"
 	"testing"
@@ -72,6 +73,7 @@ func BenchmarkCaches(b *testing.B) {
 	standardMap := NewSafeMap()
 	shardedCache := pkg.NewShardedCache[string](ctx, ttl, ttlDecrement)
 	concurrentCache := pkg.NewConcurrentCache[string](ctx, ttl, ttlDecrement)
+	goCache := cache.New(ttl, ttl)
 
 	for i := 0; i < 1000; i++ {
 		key, value := generateKey(i), generateValue(i)
@@ -80,6 +82,7 @@ func BenchmarkCaches(b *testing.B) {
 		freeCache.Set([]byte(key), []byte(value), int(ttl.Seconds()))
 		shardedCache.Set(key, value)
 		concurrentCache.Set(key, value)
+		goCache.Set(key, value, cache.DefaultExpiration)
 	}
 
 	benchmarks := []struct {
@@ -280,6 +283,46 @@ func BenchmarkCaches(b *testing.B) {
 							_ = concurrentCache.Set(generateKey(i), generateValue(i))
 						} else {
 							_, _ = concurrentCache.Get(generateKey(i % 1000))
+						}
+						i++
+					}
+				})
+			},
+		},
+		{
+			name: "GoCache_Write",
+			fn: func(b *testing.B) {
+				b.RunParallel(func(pb *testing.PB) {
+					i := 0
+					for pb.Next() {
+						goCache.Set(generateKey(i), generateValue(i), cache.DefaultExpiration)
+						i++
+					}
+				})
+			},
+		},
+		{
+			name: "GoCache_Read",
+			fn: func(b *testing.B) {
+				b.RunParallel(func(pb *testing.PB) {
+					i := 0
+					for pb.Next() {
+						_, _ = goCache.Get(generateKey(i % 1000))
+						i++
+					}
+				})
+			},
+		},
+		{
+			name: "GoCache_Mixed",
+			fn: func(b *testing.B) {
+				b.RunParallel(func(pb *testing.PB) {
+					i := 0
+					for pb.Next() {
+						if i%2 == 0 {
+							goCache.Set(generateKey(i), generateValue(i), cache.DefaultExpiration)
+						} else {
+							_, _ = goCache.Get(generateKey(i % 1000))
 						}
 						i++
 					}
