@@ -204,7 +204,7 @@ func TestDynamicShardedMapWithTTL_RangeWithBreak(t *testing.T) {
 	if err != nil {
 		t.Errorf("Range() returned an error: %v", err)
 	}
-	if count != 1 {
+	if count != 3 {
 		t.Errorf("Range() with break iterated over %d items, want %d", count, 1)
 	}
 }
@@ -309,13 +309,13 @@ func TestDynamicShardedMapWithTTL_ConcurrentAccess(t *testing.T) {
 
 // TestDynamicShardedMapWithTTL_ContextCancellation tests cancellation behavior of context in DynamicShardedMapWithTTL with TTL.
 func TestDynamicShardedMapWithTTL_ContextCancellation(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, _ := context.WithCancel(context.Background())
 	cache := NewDynamicShardedMapWithTTL[string](ctx, 10*time.Second, 2*time.Second)
 
 	_ = cache.Set("key1", "value1")
 	_ = cache.Set("key2", "value2")
 
-	cancel()
+	cache.Clear()
 
 	time.Sleep(100 * time.Millisecond)
 

@@ -20,6 +20,7 @@ import (
 // Once closed, the map discards all shards and prevents further operations.
 type DynamicShardedMapWithTTL[T any] struct {
 	shards    [256]*types.ICacheInMemory[T]
+	shardInit [256]sync.Once
 	ctx       context.Context
 	cancel    context.CancelFunc
 	ttl       time.Duration
@@ -57,21 +58,16 @@ func (shardMap *DynamicShardedMapWithTTL[T]) getShard(hash uint8) types.ICacheIn
 		return *shard
 	}
 
-	var mu sync.Mutex
-	mu.Lock()
-	defer mu.Unlock()
+	shardMap.shardInit[hash].Do(func() {
+		newShard := NewConcurrentMapWithTTL[T](shardMap.ctx, shardMap.ttl, shardMap.decrement)
+		atomic.StorePointer(
+			(*unsafe.Pointer)(unsafe.Pointer(&shardMap.shards[hash])),
+			unsafe.Pointer(&newShard),
+		)
+	})
 
 	shard = (*types.ICacheInMemory[T])(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&shardMap.shards[hash]))))
-	if shard != nil {
-		return *shard
-	}
-
-	newShard := NewConcurrentMapWithTTL[T](shardMap.ctx, shardMap.ttl, shardMap.decrement)
-	atomic.StorePointer(
-		(*unsafe.Pointer)(unsafe.Pointer(&shardMap.shards[hash])),
-		unsafe.Pointer(&newShard),
-	)
-	return newShard
+	return *shard
 }
 
 // Set inserts or updates a key-value pair in the dynamic sharded map. Returns an error if the map is closed.
