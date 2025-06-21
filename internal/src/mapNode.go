@@ -1,6 +1,9 @@
 package src
 
-import "time"
+import (
+	"sync/atomic"
+	"time"
+)
 
 // MapNode represents a generic node with a time-to-live (TTL) mechanism, handling data, lifecycle, and expiration.
 type MapNode[T any] struct {
@@ -13,6 +16,8 @@ type MapNode[T any] struct {
 	createdAt time.Time
 	setCount  uint32
 	getCount  uint32
+
+	isDeleted atomic.Bool
 }
 
 // NewMapNode creates a new instance of a MapNode with the given data, returning it as an implementation of IMapNode.
@@ -21,6 +26,7 @@ func NewMapNode[T any](data T) *MapNode[T] {
 	node.data = data
 	node.createdAt = time.Now()
 	node.setCount = 1
+	node.isDeleted.Store(false)
 	return node
 }
 
@@ -49,9 +55,7 @@ func (node *MapNode[T]) Tick() {
 	if node.remove == nil {
 		return
 	}
-
 	node.remove()
-	node.Clear()
 }
 
 // GetData resets the node's duration to its ttl value and returns the data stored in the node.
@@ -77,9 +81,14 @@ func (node *MapNode[T]) Clear() {
 	node.data = *new(T)
 	node.setCount = 0
 	node.getCount = 0
+	node.isDeleted.Store(false)
 }
 
 // GetMetrics returns the creation time, set count, and get count for the MapNode instance.
 func (node *MapNode[T]) GetDataWithMetrics() (T, time.Time, uint32, uint32) {
 	return node.data, node.createdAt, node.setCount, node.getCount
+}
+
+func (node *MapNode[T]) IsDeleted() bool {
+	return node.isDeleted.Load()
 }
