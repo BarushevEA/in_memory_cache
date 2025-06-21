@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/BarushevEA/in_memory_cache/pkg"
 	"github.com/BarushevEA/in_memory_cache/types"
+	"github.com/patrickmn/go-cache"
 	"time"
 )
 
@@ -20,6 +21,7 @@ func main() {
 	ttl := 1 * time.Second
 	ttlDecrement := 500 * time.Millisecond
 
+	benchGoCache(cache.New(ttl, ttlDecrement), "GoCache")
 	bench(pkg.NewShardedCache[*Test](ctx, ttl, ttlDecrement), "ShardedCache")
 	bench(pkg.NewConcurrentCache[*Test](ctx, ttl, ttlDecrement), "ConcurrentCache")
 }
@@ -36,4 +38,13 @@ func bench(cache types.ICacheInMemory[*Test], cacheName string) {
 	}
 
 	fmt.Println(cacheName, "Duration:", time.Since(start), "cache.Len:", cache.Len())
+}
+
+func benchGoCache(goCache *cache.Cache, cacheName string) {
+	start := time.Now()
+	for i := 0; i < 10000000; i++ {
+		goCache.Set(fmt.Sprintf("%dkey", i), &Test{"name", 20}, cache.DefaultExpiration)
+	}
+
+	fmt.Println(cacheName, "Duration:", time.Since(start), "cache.Len:", len(goCache.Items()))
 }
