@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"github.com/BarushevEA/in_memory_cache/pkg"
 	"github.com/BarushevEA/in_memory_cache/types"
+	"github.com/allegro/bigcache/v3"
+	"github.com/coocood/freecache"
 	"github.com/patrickmn/go-cache"
 	"time"
 )
@@ -15,12 +17,17 @@ type Test struct {
 	age  int
 }
 
-// main acts as the program's entry point, benchmarking different cache implementations with specified TTL configurations.
 func main() {
 	ctx := context.Background()
 	ttl := 1 * time.Second
 	ttlDecrement := 500 * time.Millisecond
+	bigcacheConfig := bigcache.DefaultConfig(ttl)
+	bigcacheConfig.Verbose = false
+	bigCache, _ := bigcache.New(ctx, bigcacheConfig)
+	freeCache := freecache.NewCache(100 * 1024 * 1024)
 
+	benchFreeCache(freeCache, ttl, "FreeCache")
+	benchBigCache(bigCache, "BigCache")
 	benchGoCache(cache.New(ttl, ttlDecrement), "GoCache")
 	bench(pkg.NewShardedCache[*Test](ctx, ttl, ttlDecrement), "ShardedCache")
 	bench(pkg.NewConcurrentCache[*Test](ctx, ttl, ttlDecrement), "ConcurrentCache")
@@ -47,4 +54,30 @@ func benchGoCache(goCache *cache.Cache, cacheName string) {
 	}
 
 	fmt.Println(cacheName, "Duration:", time.Since(start), "cache.Len:", len(goCache.Items()))
+}
+
+func benchBigCache(bigCache *bigcache.BigCache, cacheName string) {
+	start := time.Now()
+	for i := 0; i < 10000000; i++ {
+		err := bigCache.Set(fmt.Sprintf("%dkey", i), []byte("name:20"))
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+	}
+
+	fmt.Println(cacheName, "Duration:", time.Since(start), "cache.Len:", bigCache.Len())
+}
+
+func benchFreeCache(freeCache *freecache.Cache, ttl time.Duration, cacheName string) {
+	start := time.Now()
+	for i := 0; i < 10000000; i++ {
+		err := freeCache.Set([]byte(fmt.Sprintf("%dkey", i)), []byte("name:20"), int(ttl.Seconds()))
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+	}
+
+	fmt.Println(cacheName, "Duration:", time.Since(start), "cache.Len:", freeCache.EntryCount())
 }
