@@ -119,6 +119,8 @@ func (cMap *ConcurrentMapWithTTL[T]) Set(key string, value T) error {
 		node.SetData(value)
 		cMap.Unlock()
 		return nil
+	} else if ok {
+		node.Clear()
 	}
 
 	newNode := NewMapNode[T](value)
