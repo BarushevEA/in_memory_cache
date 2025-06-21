@@ -374,18 +374,16 @@ func (cMap *ConcurrentMapWithTTL[T]) tickCollection() {
 			}
 
 			if len(cMap.keysForDelete) > 0 {
-				go func() {
-					cMap.keysForDeleteSync.Lock()
-					for _, key := range cMap.keysForDelete {
-						cMap.Delete(key)
-					}
-					cMap.keysForDelete = cMap.keysForDelete[:0]
-					if cMap.maxKeysForDeleteCount > cMap.maxKeysForDeleteUsage {
-						cMap.maxKeysForDeleteCount = 0
-						cMap.keysForDelete = make([]string, 100, 10000)
-					}
-					cMap.keysForDeleteSync.Unlock()
-				}()
+				cMap.keysForDeleteSync.Lock()
+				for _, key := range cMap.keysForDelete {
+					cMap.Delete(key)
+				}
+				cMap.keysForDelete = cMap.keysForDelete[:0]
+				if cMap.maxKeysForDeleteCount > cMap.maxKeysForDeleteUsage {
+					cMap.maxKeysForDeleteCount = 0
+					cMap.keysForDelete = make([]string, 100, 10000)
+				}
+				cMap.keysForDeleteSync.Unlock()
 			}
 
 			nodes = nil
