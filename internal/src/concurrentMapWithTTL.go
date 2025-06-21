@@ -364,6 +364,7 @@ func (cMap *ConcurrentMapWithTTL[T]) tickCollection() {
 
 			if len(cMap.keysForDelete) > 0 {
 				deletedKeys := make([]string, 0, len(cMap.keysForDelete))
+
 				cMap.keysForDeleteSync.RLock()
 				for key := range cMap.keysForDelete {
 					deletedKeys = append(deletedKeys, key)
