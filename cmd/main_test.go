@@ -335,3 +335,431 @@ func BenchmarkCaches(b *testing.B) {
 		b.Run(bm.name, bm.fn)
 	}
 }
+
+// BenchmarkCachesWithDuplicates tests cache performance with a limited set of keys to simulate data reuse and pooling.
+func BenchmarkCachesWithDuplicates(b *testing.B) {
+	ctx := context.Background()
+	ttl := 5 * time.Minute // Достаточно большой TTL, чтобы не было вытеснения по времени
+	ttlDecrement := 1 * time.Minute
+	const numKeys = 1000 // Ограниченное количество уникальных ключей
+
+	bigcacheConfig := bigcache.DefaultConfig(ttl)
+	bigcacheConfig.Verbose = false
+	bigcacheConfig.Logger = nil
+	bigCache, _ := bigcache.New(ctx, bigcacheConfig)
+
+	freeCache := freecache.NewCache(100 * 1024 * 1024)
+	standardMap := NewSafeMap()
+	shardedCache := pkg.NewShardedCache[string](ctx, ttl, ttlDecrement)
+	concurrentCache := pkg.NewConcurrentCache[string](ctx, ttl, ttlDecrement)
+	goCache := cache.New(ttl, ttl)
+
+	// Предварительное заполнение кешей ограниченным набором ключей
+	for i := 0; i < numKeys; i++ {
+		key, value := generateKey(i), generateValue(i)
+		standardMap.Set(key, value)
+		bigCache.Set(key, []byte(value))
+		freeCache.Set([]byte(key), []byte(value), int(ttl.Seconds()))
+		shardedCache.Set(key, value)
+		concurrentCache.Set(key, value)
+		goCache.Set(key, value, cache.DefaultExpiration)
+	}
+
+	benchmarks := []struct {
+		name string
+		fn   func(b *testing.B)
+	}{
+		{
+			name: "StandardMap_Write_Duplicates",
+			fn: func(b *testing.B) {
+				b.RunParallel(func(pb *testing.PB) {
+					i := 0
+					for pb.Next() {
+						// Используем оператор по модулю для генерации повторяющихся ключей
+						_ = standardMap.Set(generateKey(i%numKeys), generateValue(i))
+						i++
+					}
+				})
+			},
+		},
+		{
+			name: "StandardMap_Read_Duplicates",
+			fn: func(b *testing.B) {
+				b.RunParallel(func(pb *testing.PB) {
+					i := 0
+					for pb.Next() {
+						_, _ = standardMap.Get(generateKey(i % numKeys))
+						i++
+					}
+				})
+			},
+		},
+		{
+			name: "BigCache_Write_Duplicates",
+			fn: func(b *testing.B) {
+				b.RunParallel(func(pb *testing.PB) {
+					i := 0
+					for pb.Next() {
+						_ = bigCache.Set(generateKey(i%numKeys), []byte(generateValue(i)))
+						i++
+					}
+				})
+			},
+		},
+		{
+			name: "BigCache_Read_Duplicates",
+			fn: func(b *testing.B) {
+				b.RunParallel(func(pb *testing.PB) {
+					i := 0
+					for pb.Next() {
+						_, _ = bigCache.Get(generateKey(i % numKeys))
+						i++
+					}
+				})
+			},
+		},
+		{
+			name: "FreeCache_Write_Duplicates",
+			fn: func(b *testing.B) {
+				b.RunParallel(func(pb *testing.PB) {
+					i := 0
+					for pb.Next() {
+						_ = freeCache.Set([]byte(generateKey(i%numKeys)), []byte(generateValue(i)), int(ttl.Seconds()))
+						i++
+					}
+				})
+			},
+		},
+		{
+			name: "FreeCache_Read_Duplicates",
+			fn: func(b *testing.B) {
+				b.RunParallel(func(pb *testing.PB) {
+					i := 0
+					for pb.Next() {
+						_, _ = freeCache.Get([]byte(generateKey(i % numKeys)))
+						i++
+					}
+				})
+			},
+		},
+		{
+			name: "ShardedCache_Write_Duplicates",
+			fn: func(b *testing.B) {
+				b.RunParallel(func(pb *testing.PB) {
+					i := 0
+					for pb.Next() {
+						_ = shardedCache.Set(generateKey(i%numKeys), generateValue(i))
+						i++
+					}
+				})
+			},
+		},
+		{
+			name: "ShardedCache_Read_Duplicates",
+			fn: func(b *testing.B) {
+				b.RunParallel(func(pb *testing.PB) {
+					i := 0
+					for pb.Next() {
+						_, _ = shardedCache.Get(generateKey(i % numKeys))
+						i++
+					}
+				})
+			},
+		},
+		{
+			name: "ConcurrentCache_Write_Duplicates",
+			fn: func(b *testing.B) {
+				b.RunParallel(func(pb *testing.PB) {
+					i := 0
+					for pb.Next() {
+						_ = concurrentCache.Set(generateKey(i%numKeys), generateValue(i))
+						i++
+					}
+				})
+			},
+		},
+		{
+			name: "ConcurrentCache_Read_Duplicates",
+			fn: func(b *testing.B) {
+				b.RunParallel(func(pb *testing.PB) {
+					i := 0
+					for pb.Next() {
+						_, _ = concurrentCache.Get(generateKey(i % numKeys))
+						i++
+					}
+				})
+			},
+		},
+		{
+			name: "GoCache_Write_Duplicates",
+			fn: func(b *testing.B) {
+				b.RunParallel(func(pb *testing.PB) {
+					i := 0
+					for pb.Next() {
+						goCache.Set(generateKey(i%numKeys), generateValue(i), cache.DefaultExpiration)
+						i++
+					}
+				})
+			},
+		},
+		{
+			name: "GoCache_Read_Duplicates",
+			fn: func(b *testing.B) {
+				b.RunParallel(func(pb *testing.PB) {
+					i := 0
+					for pb.Next() {
+						_, _ = goCache.Get(generateKey(i % numKeys))
+						i++
+					}
+				})
+			},
+		},
+	}
+
+	for _, bm := range benchmarks {
+		b.Run(bm.name, bm.fn)
+	}
+}
+
+// BenchmarkCachesWithEviction tests cache performance under eviction scenarios (short TTLs and deletions).
+func BenchmarkCachesWithEviction(b *testing.B) {
+	ctx := context.Background()
+	// Очень короткий TTL для быстрого вытеснения
+	ttl := 200 * time.Millisecond
+	ttlDecrement := 50 * time.Millisecond // Возможно, не используется всеми кешами, но для полной картины
+
+	const numKeys = 1000 // Количество уникальных ключей для записи
+
+	// Инициализация кешей для каждого бенчмарка, чтобы избежать влияния предыдущих тестов
+	// и обеспечить чистые условия для каждого запуска.
+
+	benchmarks := []struct {
+		name string
+		fn   func(b *testing.B)
+	}{
+		{
+			name: "BigCache_Write_Evict_Read",
+			fn: func(b *testing.B) {
+				bigcacheConfig := bigcache.DefaultConfig(ttl)
+				bigcacheConfig.Verbose = false
+				bigcacheConfig.Logger = nil
+				bigCache, _ := bigcache.New(ctx, bigcacheConfig)
+				b.ResetTimer()
+				b.RunParallel(func(pb *testing.PB) {
+					i := 0
+					for pb.Next() {
+						key := generateKey(i % numKeys)
+						value := []byte(generateValue(i))
+						_ = bigCache.Set(key, value)
+						// Чтение элемента, который, возможно, уже был вытеснен
+						_, _ = bigCache.Get(key)
+						i++
+					}
+				})
+				// Небольшая задержка после цикла, чтобы дать кешу время на очистку/пулинг
+				time.Sleep(ttl * 2)
+			},
+		},
+		{
+			name: "FreeCache_Write_Evict_Read",
+			fn: func(b *testing.B) {
+				freeCache := freecache.NewCache(100 * 1024 * 1024)
+				b.ResetTimer()
+				b.RunParallel(func(pb *testing.PB) {
+					i := 0
+					for pb.Next() {
+						key := []byte(generateKey(i % numKeys))
+						value := []byte(generateValue(i))
+						_ = freeCache.Set(key, value, int(ttl.Seconds()))
+						_, _ = freeCache.Get(key)
+						i++
+					}
+				})
+				time.Sleep(ttl * 2)
+			},
+		},
+		{
+			name: "ShardedCache_Write_Evict_Read",
+			fn: func(b *testing.B) {
+				shardedCache := pkg.NewShardedCache[string](ctx, ttl, ttlDecrement)
+				b.ResetTimer()
+				b.RunParallel(func(pb *testing.PB) {
+					i := 0
+					for pb.Next() {
+						key := generateKey(i % numKeys)
+						value := generateValue(i)
+						_ = shardedCache.Set(key, value)
+						_, _ = shardedCache.Get(key)
+						i++
+					}
+				})
+				time.Sleep(ttl * 2)
+			},
+		},
+		{
+			name: "ConcurrentCache_Write_Evict_Read",
+			fn: func(b *testing.B) {
+				concurrentCache := pkg.NewConcurrentCache[string](ctx, ttl, ttlDecrement)
+				b.ResetTimer()
+				b.RunParallel(func(pb *testing.PB) {
+					i := 0
+					for pb.Next() {
+						key := generateKey(i % numKeys)
+						value := generateValue(i)
+						_ = concurrentCache.Set(key, value)
+						_, _ = concurrentCache.Get(key)
+						i++
+					}
+				})
+				time.Sleep(ttl * 2)
+			},
+		},
+		{
+			name: "GoCache_Write_Evict_Read",
+			fn: func(b *testing.B) {
+				goCache := cache.New(ttl, ttl) // TTL по умолчанию для GoCache - это переданный ttl
+				b.ResetTimer()
+				b.RunParallel(func(pb *testing.PB) {
+					i := 0
+					for pb.Next() {
+						key := generateKey(i % numKeys)
+						value := generateValue(i)
+						goCache.Set(key, value, cache.DefaultExpiration)
+						_, _ = goCache.Get(key)
+						i++
+					}
+				})
+				time.Sleep(ttl * 2)
+			},
+		},
+		// Добавление тестов с явным удалением
+		{
+			name: "BigCache_Write_Delete_Read",
+			fn: func(b *testing.B) {
+				bigcacheConfig := bigcache.DefaultConfig(5 * time.Minute) // Большой TTL, чтобы удаление было явным
+				bigcacheConfig.Verbose = false
+				bigcacheConfig.Logger = nil
+				bigCache, _ := bigcache.New(ctx, bigcacheConfig)
+
+				// Предварительное заполнение
+				for i := 0; i < numKeys; i++ {
+					_ = bigCache.Set(generateKey(i), []byte(generateValue(i)))
+				}
+				b.ResetTimer()
+				b.RunParallel(func(pb *testing.PB) {
+					i := 0
+					for pb.Next() {
+						key := generateKey(i % numKeys)
+						value := []byte(generateValue(i))
+						_ = bigCache.Set(key, value)
+						if i%2 == 0 { // Удаляем половину элементов
+							_ = bigCache.Delete(key)
+						}
+						_, _ = bigCache.Get(key)
+						i++
+					}
+				})
+			},
+		},
+		{
+			name: "FreeCache_Write_Delete_Read",
+			fn: func(b *testing.B) {
+				freeCache := freecache.NewCache(100 * 1024 * 1024)
+				// Предварительное заполнение
+				for i := 0; i < numKeys; i++ {
+					_ = freeCache.Set([]byte(generateKey(i)), []byte(generateValue(i)), 300) // Большой TTL
+				}
+				b.ResetTimer()
+				b.RunParallel(func(pb *testing.PB) {
+					i := 0
+					for pb.Next() {
+						key := []byte(generateKey(i % numKeys))
+						value := []byte(generateValue(i))
+						_ = freeCache.Set(key, value, 300)
+						if i%2 == 0 {
+							freeCache.Del(key)
+						}
+						_, _ = freeCache.Get(key)
+						i++
+					}
+				})
+			},
+		},
+		{
+			name: "ShardedCache_Write_Delete_Read",
+			fn: func(b *testing.B) {
+				shardedCache := pkg.NewShardedCache[string](ctx, 5*time.Minute, ttlDecrement) // Большой TTL
+				// Предварительное заполнение
+				for i := 0; i < numKeys; i++ {
+					_ = shardedCache.Set(generateKey(i), generateValue(i))
+				}
+				b.ResetTimer()
+				b.RunParallel(func(pb *testing.PB) {
+					i := 0
+					for pb.Next() {
+						key := generateKey(i % numKeys)
+						value := generateValue(i)
+						_ = shardedCache.Set(key, value)
+						if i%2 == 0 {
+							shardedCache.Delete(key)
+						}
+						_, _ = shardedCache.Get(key)
+						i++
+					}
+				})
+			},
+		},
+		{
+			name: "ConcurrentCache_Write_Delete_Read",
+			fn: func(b *testing.B) {
+				concurrentCache := pkg.NewConcurrentCache[string](ctx, 5*time.Minute, ttlDecrement) // Большой TTL
+				// Предварительное заполнение
+				for i := 0; i < numKeys; i++ {
+					_ = concurrentCache.Set(generateKey(i), generateValue(i))
+				}
+				b.ResetTimer()
+				b.RunParallel(func(pb *testing.PB) {
+					i := 0
+					for pb.Next() {
+						key := generateKey(i % numKeys)
+						value := generateValue(i)
+						_ = concurrentCache.Set(key, value)
+						if i%2 == 0 {
+							concurrentCache.Delete(key)
+						}
+						_, _ = concurrentCache.Get(key)
+						i++
+					}
+				})
+			},
+		},
+		{
+			name: "GoCache_Write_Delete_Read",
+			fn: func(b *testing.B) {
+				goCache := cache.New(5*time.Minute, 5*time.Minute) // Большой TTL
+				// Предварительное заполнение
+				for i := 0; i < numKeys; i++ {
+					goCache.Set(generateKey(i), generateValue(i), cache.DefaultExpiration)
+				}
+				b.ResetTimer()
+				b.RunParallel(func(pb *testing.PB) {
+					i := 0
+					for pb.Next() {
+						key := generateKey(i % numKeys)
+						value := generateValue(i)
+						goCache.Set(key, value, cache.DefaultExpiration)
+						if i%2 == 0 {
+							goCache.Delete(key)
+						}
+						_, _ = goCache.Get(key)
+						i++
+					}
+				})
+			},
+		},
+	}
+
+	for _, bm := range benchmarks {
+		b.Run(bm.name, bm.fn)
+	}
+}
