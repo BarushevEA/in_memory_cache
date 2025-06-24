@@ -6,18 +6,21 @@ import (
 	"time"
 )
 
-// TestMapNode_SetRemoveCallback tests that the remove callback is correctly set and invoked when the node is removed.
-//func TestMapNode_SetRemoveCallback(t *testing.T) {
-//	var called bool
-//	removeFunc := func() { called = true }
+// TestMapNode_SetRemoveCallback was removed because the remove callback functionality
+// has been removed from the MapNode implementation.
+// The commented code is kept for historical reference.
 //
-//	node := NewMapNode[int](42)
-//	node.SetRemoveCallback(removeFunc)
+// func TestMapNode_SetRemoveCallback(t *testing.T) {
+// 	var called bool
+// 	removeFunc := func() { called = true }
 //
-//	// Note: Directly calling node.remove() here to test the callback setting
-//	node.remove()
-//	assert.True(t, called, "remove callback should be called")
-//}
+// 	node := NewMapNode[int](42)
+// 	node.SetRemoveCallback(removeFunc)
+//
+// 	// Note: Directly calling node.remove() here to test the callback setting
+// 	node.remove()
+// 	assert.True(t, called, "remove callback should be called")
+// }
 
 // TestMapNode_SetTTL tests the SetTTL method of MapNode to ensure it correctly updates the TTL and duration values.
 func TestMapNode_SetTTL(t *testing.T) {
@@ -247,6 +250,6 @@ func TestMapNode_SetCount(t *testing.T) {
 		// Assert
 		assert.Equal(t, uint32(0), setCount)
 		assert.Equal(t, uint32(0), getCount)
-		assert.False(t, createdAt.IsZero()) // createdAt is not reset by Clear
+		assert.True(t, createdAt.IsZero()) // createdAt is reset by Clear
 	})
 }

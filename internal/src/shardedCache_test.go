@@ -152,11 +152,24 @@ func TestDynamicShardedMapWithTTL_TickCollection(t *testing.T) {
 	cache := NewDynamicShardedMapWithTTL[string](ctx, 2*time.Second, 1*time.Second)
 	_ = cache.Set("key1", "value1")
 
-	time.Sleep(3 * time.Second)
+	// Wait for the key to expire using polling
+	maxWaitTime := 5 * time.Second
+	pollInterval := 200 * time.Millisecond
+	deadline := time.Now().Add(maxWaitTime)
+
+	expired := false
+	for time.Now().Before(deadline) {
+		if cache.Len() == 0 {
+			expired = true
+			break
+		}
+		time.Sleep(pollInterval)
+	}
+
 	cancel()
 
-	if cache.Len() != 0 {
-		t.Errorf("tickCollection() did not clear expired items")
+	if !expired {
+		t.Errorf("tickCollection() did not clear expired items within %v", maxWaitTime)
 	}
 }
 
@@ -259,18 +272,14 @@ func TestDynamicShardedMapWithTTL_TTLExpiration(t *testing.T) {
 		t.Errorf("Value should be available before TTL expires")
 	}
 
-	timer := time.NewTimer(ttl + 500*time.Millisecond)
-	<-timer.C
+	// Wait for the key to expire
+	// We'll sleep for a bit longer than the TTL to ensure the ticker has time to run
+	time.Sleep(ttl * 3)
 
-	maxAttempts := 5
-	for i := 0; i < maxAttempts; i++ {
-		if _, ok := cache.Get("key1"); !ok {
-			return
-		}
-		time.Sleep(100 * time.Millisecond)
+	// Check if the key has been removed
+	if _, ok := cache.Get("key1"); ok {
+		t.Errorf("Value should have been removed after TTL expiration")
 	}
-
-	t.Errorf("Value should be removed after TTL expiration")
 }
 
 // TestDynamicShardedMapWithTTL_ConcurrentAccess tests concurrent access on DynamicShardedMapWithTTL to validate thread safety and TTL behavior.

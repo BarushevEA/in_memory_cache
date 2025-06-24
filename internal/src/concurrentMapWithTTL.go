@@ -29,12 +29,6 @@ type ConcurrentMapWithTTL[T any] struct {
 	maxKeysForDeleteUsage int
 }
 
-// rangeEntry represents a key-value entry with a key of type string and a node implementing the IMapNode interface.
-type rangeEntry[T any] struct {
-	key  string
-	node *MapNode[T]
-}
-
 // NewConcurrentMapWithTTL creates a new concurrent map with TTL support and starts a background TTL management goroutine.
 func NewConcurrentMapWithTTL[T any](ctx context.Context, ttl, ttlDecrement time.Duration) types.ICacheInMemory[T] {
 	cMap := &ConcurrentMapWithTTL[T]{}
@@ -64,20 +58,47 @@ func (cMap *ConcurrentMapWithTTL[T]) Range(callback func(key string, value T) bo
 		return errors.New("ConcurrentMapWithTTL.Range ERROR: cannot perform operation on closed cache")
 	}
 
-	entries := make([]*rangeEntry[T], 0, len(cMap.data))
-	cMap.RLock()
-	for key, node := range cMap.data {
-		entries = append(entries, &rangeEntry[T]{key: key, node: node})
-	}
-	cMap.RUnlock()
+	// Process in smaller batches to reduce lock contention
+	const batchSize = 100
+	var keys []string
+	var values []T
 
-	for _, entry := range entries {
-		if !callback(entry.key, entry.node.GetData()) {
-			return nil
+	for {
+		// Reset slices but keep capacity
+		if keys == nil {
+			keys = make([]string, 0, batchSize)
+			values = make([]T, 0, batchSize)
+		} else {
+			keys = keys[:0]
+			values = values[:0]
+		}
+
+		// Get a batch of keys and values under read lock
+		cMap.RLock()
+		i := 0
+		for k, node := range cMap.data {
+			keys = append(keys, k)
+			values = append(values, node.GetData())
+			i++
+			if i >= batchSize {
+				break
+			}
+		}
+		hasMore := len(cMap.data) > len(keys)
+		cMap.RUnlock()
+
+		// Process the batch
+		for i, key := range keys {
+			if !callback(key, values[i]) {
+				return nil
+			}
+		}
+
+		// If we processed all items, we're done
+		if !hasMore {
+			break
 		}
 	}
-
-	entries = nil
 
 	return nil
 }
@@ -87,21 +108,60 @@ func (cMap *ConcurrentMapWithTTL[T]) RangeWithMetrics(callback func(key string, 
 		return errors.New("ConcurrentMapWithTTL.Range ERROR: cannot perform operation on closed cache")
 	}
 
-	entries := make([]*rangeEntry[T], 0, len(cMap.data))
-	cMap.RLock()
-	for key, node := range cMap.data {
-		entries = append(entries, &rangeEntry[T]{key: key, node: node})
-	}
-	cMap.RUnlock()
+	// Process in smaller batches to reduce lock contention
+	const batchSize = 100
+	var keys []string
+	var values []T
+	var createdAts []time.Time
+	var setCounts []uint32
+	var getCounts []uint32
 
-	for _, entry := range entries {
-		value, createdAt, setCount, getCount := entry.node.GetDataWithMetrics()
-		if !callback(entry.key, value, createdAt, setCount, getCount) {
-			return nil
+	for {
+		// Reset slices but keep capacity
+		if keys == nil {
+			keys = make([]string, 0, batchSize)
+			values = make([]T, 0, batchSize)
+			createdAts = make([]time.Time, 0, batchSize)
+			setCounts = make([]uint32, 0, batchSize)
+			getCounts = make([]uint32, 0, batchSize)
+		} else {
+			keys = keys[:0]
+			values = values[:0]
+			createdAts = createdAts[:0]
+			setCounts = setCounts[:0]
+			getCounts = getCounts[:0]
+		}
+
+		// Get a batch of keys and values under read lock
+		cMap.RLock()
+		i := 0
+		for k, node := range cMap.data {
+			value, createdAt, setCount, getCount := node.GetDataWithMetrics()
+			keys = append(keys, k)
+			values = append(values, value)
+			createdAts = append(createdAts, createdAt)
+			setCounts = append(setCounts, setCount)
+			getCounts = append(getCounts, getCount)
+			i++
+			if i >= batchSize {
+				break
+			}
+		}
+		hasMore := len(cMap.data) > len(keys)
+		cMap.RUnlock()
+
+		// Process the batch
+		for i, key := range keys {
+			if !callback(key, values[i], createdAts[i], setCounts[i], getCounts[i]) {
+				return nil
+			}
+		}
+
+		// If we processed all items, we're done
+		if !hasMore {
+			break
 		}
 	}
-
-	entries = nil
 
 	return nil
 }
@@ -312,22 +372,35 @@ func (cMap *ConcurrentMapWithTTL[T]) DeleteBatch(keys []string) {
 }
 
 func (cMap *ConcurrentMapWithTTL[T]) groupDeletion(keysToDelete []string) {
+	// Pre-allocate a slice to hold nodes for reuse
+	nodesToReuse := make([]*MapNode[T], 0, len(keysToDelete))
+
+	// First, delete keys and collect nodes under the main lock
 	cMap.Lock()
-	cMap.nodeBufferLock.Lock()
-	for i := 0; i < len(keysToDelete); i++ {
-		_ = i
-		// Check again in case the key was deleted between the read lock and write lock
-		if node, ok := cMap.data[keysToDelete[i]]; ok {
-			delete(cMap.data, keysToDelete[i])
+	for _, key := range keysToDelete {
+		if node, ok := cMap.data[key]; ok {
+			delete(cMap.data, key)
 			node.Clear()
-			// Add the node to the buffer for reuse if there's space
-			if len(cMap.nodeBuffer) < cMap.maxNodeBufferSize {
-				cMap.nodeBuffer = append(cMap.nodeBuffer, node)
-			}
+			nodesToReuse = append(nodesToReuse, node)
 		}
 	}
-	cMap.nodeBufferLock.Unlock()
 	cMap.Unlock()
+
+	// Then, add nodes to the buffer under the buffer lock if needed
+	if len(nodesToReuse) > 0 {
+		cMap.nodeBufferLock.Lock()
+		// Calculate how many nodes we can add to the buffer
+		spaceAvailable := cMap.maxNodeBufferSize - len(cMap.nodeBuffer)
+		if spaceAvailable > 0 {
+			// Add as many nodes as we can
+			nodesToAdd := nodesToReuse
+			if len(nodesToAdd) > spaceAvailable {
+				nodesToAdd = nodesToAdd[:spaceAvailable]
+			}
+			cMap.nodeBuffer = append(cMap.nodeBuffer, nodesToAdd...)
+		}
+		cMap.nodeBufferLock.Unlock()
+	}
 }
 
 // Clear removes all elements from the map and clears their associated nodes.
@@ -376,7 +449,8 @@ func (cMap *ConcurrentMapWithTTL[T]) tickCollection() {
 	ticker := time.NewTicker(cMap.ttlDecrement)
 	defer ticker.Stop()
 
-	isProcessed := false
+	// Pre-allocate slices to reduce GC pressure
+	expiredKeys := make([]string, 0, 128)
 
 	for {
 		select {
@@ -387,45 +461,27 @@ func (cMap *ConcurrentMapWithTTL[T]) tickCollection() {
 			if cMap.isClosed.Load() {
 				return
 			}
-			if isProcessed {
-				continue
-			}
 
-			isProcessed = true
+			// Reset the expired keys slice but keep the capacity
+			expiredKeys = expiredKeys[:0]
 
-			// Collect keys and nodes that need to be processed
-			keysToProcess := make([]string, 0, len(cMap.data))
-			nodesToProcess := make([]*MapNode[T], 0, len(cMap.data))
-
+			// Use a more efficient approach with a single read lock
 			cMap.RLock()
 			for key, node := range cMap.data {
-				keysToProcess = append(keysToProcess, key)
-				nodesToProcess = append(nodesToProcess, node)
-			}
-			cMap.RUnlock()
-
-			// Process TTL for each node
-			expiredKeys := make([]string, 0)
-			for i, node := range nodesToProcess {
-				// Decrement TTL
-				node.Tick()
+				// Decrement TTL directly
+				node.duration -= node.ttlDecrement
 
 				// If TTL is expired, mark the key for deletion
 				if node.duration <= 0 {
-					expiredKeys = append(expiredKeys, keysToProcess[i])
+					expiredKeys = append(expiredKeys, key)
 				}
 			}
+			cMap.RUnlock()
 
-			// Delete expired keys
+			// Delete expired keys if any
 			if len(expiredKeys) > 0 {
 				cMap.groupDeletion(expiredKeys)
 			}
-
-			// Clean up
-			keysToProcess = nil
-			nodesToProcess = nil
-			expiredKeys = nil
-			isProcessed = false
 		}
 	}
 }

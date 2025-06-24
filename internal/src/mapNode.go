@@ -31,7 +31,6 @@ func (node *MapNode[T]) reset(data T) {
 	node.createdAt = time.Now()
 	node.setCount = 1
 	node.getCount = 0
-	//node.isDeleted.Store(false)
 }
 
 // SetRemoveCallback sets the callback function to be invoked when the node needs to be removed due to TTL expiration.
@@ -50,16 +49,10 @@ func (node *MapNode[T]) SetTTLDecrement(ttlDecrement time.Duration) {
 	node.ttlDecrement = ttlDecrement
 }
 
-// Tick decreases the node's remaining time-to-live by the decrement value and invokes the removal callback if expired.
+// Tick decreases the node's remaining time-to-live by the decrement value.
+// This is a minimal implementation for efficiency.
 func (node *MapNode[T]) Tick() {
 	node.duration -= node.ttlDecrement
-	//if node.duration > 0 {
-	//	return
-	//}
-	//if node.remove == nil {
-	//	return
-	//}
-	//node.remove()
 }
 
 // GetData resets the node's duration to its ttl value and returns the data stored in the node.
@@ -85,6 +78,7 @@ func (node *MapNode[T]) Clear() {
 	node.data = *new(T)
 	node.setCount = 0
 	node.getCount = 0
+	node.createdAt = time.Time{}
 	//node.isDeleted.Store(false)
 }
 
