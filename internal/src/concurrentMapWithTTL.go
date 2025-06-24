@@ -122,8 +122,6 @@ func (cMap *ConcurrentMapWithTTL[T]) Set(key string, value T) error {
 	newNode := cMap.getNode(value)
 	newNode.SetTTL(cMap.ttl)
 	newNode.SetTTLDecrement(cMap.ttlDecrement)
-	// No need for a remove callback as we now check for expired keys in tickCollection
-
 	cMap.data[key] = newNode
 	cMap.tickerOnce.Do(func() {
 		go cMap.tickCollection()
@@ -144,13 +142,6 @@ func (cMap *ConcurrentMapWithTTL[T]) getNode(value T) *MapNode[T] {
 	cMap.nodeBufferLock.RUnlock()
 	return NewMapNode[T](value)
 }
-
-// markForDelete is now deprecated as we delete keys immediately
-// This method is kept for backward compatibility with existing code
-//func (cMap *ConcurrentMapWithTTL[T]) markForDelete(key string, node *MapNode[T]) {
-//	// Instead of marking for deletion, delete immediately
-//	cMap.Delete(key)
-//}
 
 // SetBatch adds multiple key-value pairs to the map by invoking the Set method for each entry in the provided batch map.
 func (cMap *ConcurrentMapWithTTL[T]) SetBatch(batch map[string]T) error {
@@ -239,13 +230,12 @@ func (cMap *ConcurrentMapWithTTL[T]) GetBatchWithMetrics(keys []string) ([]*type
 	}
 
 	result := make([]*types.Metric[T], 0, len(keys))
+	cMap.RLock()
 	for _, key := range keys {
 		metric := &types.Metric[T]{}
 		metric.Key = key
 
-		cMap.RLock()
 		node, exists := cMap.data[key]
-		cMap.RUnlock()
 
 		if !exists {
 			result = append(result, metric)
@@ -260,6 +250,7 @@ func (cMap *ConcurrentMapWithTTL[T]) GetBatchWithMetrics(keys []string) ([]*type
 
 		result = append(result, metric)
 	}
+	cMap.RUnlock()
 
 	return result, nil
 }
@@ -270,7 +261,7 @@ func (cMap *ConcurrentMapWithTTL[T]) Delete(key string) {
 		return
 	}
 
-	// First try with a read lock to check if the key exists
+	// First, try with a read lock to check if the key exists
 	cMap.RLock()
 	node, ok := cMap.data[key]
 	cMap.RUnlock()
@@ -303,13 +294,11 @@ func (cMap *ConcurrentMapWithTTL[T]) DeleteBatch(keys []string) {
 
 	// First collect all the keys that exist in the map
 	keysToDelete := make([]string, 0, len(keys))
-	nodesToClear := make([]*MapNode[T], 0, len(keys))
 
 	cMap.RLock()
-	for _, key := range keys {
-		if node, ok := cMap.data[key]; ok {
-			keysToDelete = append(keysToDelete, key)
-			nodesToClear = append(nodesToClear, node)
+	for i := 0; i < len(keys); i++ {
+		if _, ok := cMap.data[keys[i]]; ok {
+			keysToDelete = append(keysToDelete, keys[i])
 		}
 	}
 	cMap.RUnlock()
@@ -319,23 +308,25 @@ func (cMap *ConcurrentMapWithTTL[T]) DeleteBatch(keys []string) {
 	}
 
 	// Then delete them all at once with a single write lock
+	cMap.groupDeletion(keysToDelete)
+}
+
+func (cMap *ConcurrentMapWithTTL[T]) groupDeletion(keysToDelete []string) {
 	cMap.Lock()
-	for i, key := range keysToDelete {
+	cMap.nodeBufferLock.Lock()
+	for i := 0; i < len(keysToDelete); i++ {
+		_ = i
 		// Check again in case the key was deleted between the read lock and write lock
-		if node, ok := cMap.data[key]; ok {
-			delete(cMap.data, key)
+		if node, ok := cMap.data[keysToDelete[i]]; ok {
+			delete(cMap.data, keysToDelete[i])
 			node.Clear()
 			// Add the node to the buffer for reuse if there's space
 			if len(cMap.nodeBuffer) < cMap.maxNodeBufferSize {
-				cMap.nodeBufferLock.Lock()
 				cMap.nodeBuffer = append(cMap.nodeBuffer, node)
-				cMap.nodeBufferLock.Unlock()
 			}
-		} else {
-			// If the key was deleted, clear the node we collected earlier
-			nodesToClear[i].Clear()
 		}
 	}
+	cMap.nodeBufferLock.Unlock()
 	cMap.Unlock()
 }
 
@@ -427,7 +418,7 @@ func (cMap *ConcurrentMapWithTTL[T]) tickCollection() {
 
 			// Delete expired keys
 			if len(expiredKeys) > 0 {
-				cMap.DeleteBatch(expiredKeys)
+				cMap.groupDeletion(expiredKeys)
 			}
 
 			// Clean up
