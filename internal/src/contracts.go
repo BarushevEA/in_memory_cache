@@ -8,7 +8,7 @@ import (
 type IMapNode[T any] interface {
 	SetTTL(ttl time.Duration)
 	SetTTLDecrement(ttlDecrement time.Duration)
-	SetRemoveCallback(remove func())
+	//SetRemoveCallback(remove func())
 	Tick()
 	GetData() T
 	SetData(data T)

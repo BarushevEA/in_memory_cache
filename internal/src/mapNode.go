@@ -1,7 +1,6 @@
 package src
 
 import (
-	"sync/atomic"
 	"time"
 )
 
@@ -11,13 +10,13 @@ type MapNode[T any] struct {
 	ttl          time.Duration
 	duration     time.Duration
 	ttlDecrement time.Duration
-	remove       func()
+	//remove       func()
 
 	createdAt time.Time
 	setCount  uint32
 	getCount  uint32
 
-	isDeleted atomic.Bool
+	//isDeleted atomic.Bool
 }
 
 // NewMapNode creates a new instance of a MapNode with the given data, returning it as an implementation of IMapNode.
@@ -32,13 +31,13 @@ func (node *MapNode[T]) reset(data T) {
 	node.createdAt = time.Now()
 	node.setCount = 1
 	node.getCount = 0
-	node.isDeleted.Store(false)
+	//node.isDeleted.Store(false)
 }
 
 // SetRemoveCallback sets the callback function to be invoked when the node needs to be removed due to TTL expiration.
-func (node *MapNode[T]) SetRemoveCallback(remove func()) {
-	node.remove = remove
-}
+//func (node *MapNode[T]) SetRemoveCallback(remove func()) {
+//	node.remove = remove
+//}
 
 // SetTTL sets the time-to-live (TTL) duration for the MapNode instance.
 func (node *MapNode[T]) SetTTL(ttl time.Duration) {
@@ -54,13 +53,13 @@ func (node *MapNode[T]) SetTTLDecrement(ttlDecrement time.Duration) {
 // Tick decreases the node's remaining time-to-live by the decrement value and invokes the removal callback if expired.
 func (node *MapNode[T]) Tick() {
 	node.duration -= node.ttlDecrement
-	if node.duration > 0 {
-		return
-	}
-	if node.remove == nil {
-		return
-	}
-	node.remove()
+	//if node.duration > 0 {
+	//	return
+	//}
+	//if node.remove == nil {
+	//	return
+	//}
+	//node.remove()
 }
 
 // GetData resets the node's duration to its ttl value and returns the data stored in the node.
@@ -80,13 +79,13 @@ func (node *MapNode[T]) SetData(data T) {
 // Clear resets all fields of the MapNode to their zero values, effectively clearing its state and binding.
 func (node *MapNode[T]) Clear() {
 	node.duration = 0
-	node.remove = nil
+	//node.remove = nil
 	node.ttl = 0
 	node.ttlDecrement = 0
 	node.data = *new(T)
 	node.setCount = 0
 	node.getCount = 0
-	node.isDeleted.Store(false)
+	//node.isDeleted.Store(false)
 }
 
 // GetMetrics returns the creation time, set count, and get count for the MapNode instance.
@@ -94,6 +93,6 @@ func (node *MapNode[T]) GetDataWithMetrics() (T, time.Time, uint32, uint32) {
 	return node.data, node.createdAt, node.setCount, node.getCount
 }
 
-func (node *MapNode[T]) IsDeleted() bool {
-	return node.isDeleted.Load()
-}
+//func (node *MapNode[T]) IsDeleted() bool {
+//	return node.isDeleted.Load()
+//}

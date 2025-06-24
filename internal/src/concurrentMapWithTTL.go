@@ -113,15 +113,8 @@ func (cMap *ConcurrentMapWithTTL[T]) Set(key string, value T) error {
 	}
 
 	cMap.Lock()
-	if node, ok := cMap.data[key]; ok && !node.IsDeleted() {
+	if node, ok := cMap.data[key]; ok {
 		node.SetData(value)
-		cMap.Unlock()
-		return nil
-	} else if ok {
-		node.reset(value)
-		node.SetTTL(cMap.ttl)
-		node.SetTTLDecrement(cMap.ttlDecrement)
-		// No need for a remove callback as we now check for expired keys in tickCollection
 		cMap.Unlock()
 		return nil
 	}
