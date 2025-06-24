@@ -292,7 +292,7 @@ func (cMap *ConcurrentMapWithTTL[T]) DeleteBatch(keys []string) {
 		return
 	}
 
-	// First collect all the keys that exist in the map
+	// First, collect all the keys that exist in the map
 	keysToDelete := make([]string, 0, len(keys))
 
 	cMap.RLock()
