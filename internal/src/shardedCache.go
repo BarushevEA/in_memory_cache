@@ -53,11 +53,13 @@ func NewDynamicShardedMapWithTTL[T any](ctx context.Context, ttl, decrement time
 
 // getShard returns the shard corresponding to the given hash, creating it if it doesn't already exist.
 func (shardMap *DynamicShardedMapWithTTL[T]) getShard(hash uint8) types.ICacheInMemory[T] {
+	// Fast path: check if shard exists with a single atomic load
 	shard := (*types.ICacheInMemory[T])(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&shardMap.shards[hash]))))
 	if shard != nil {
 		return *shard
 	}
 
+	// Slow path: initialize the shard if it doesn't exist
 	shardMap.shardInit[hash].Do(func() {
 		newShard := NewConcurrentMapWithTTL[T](shardMap.ctx, shardMap.ttl, shardMap.decrement)
 		atomic.StorePointer(
@@ -66,8 +68,8 @@ func (shardMap *DynamicShardedMapWithTTL[T]) getShard(hash uint8) types.ICacheIn
 		)
 	})
 
-	shard = (*types.ICacheInMemory[T])(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&shardMap.shards[hash]))))
-	return *shard
+	// After initialization, load the shard again
+	return *(*types.ICacheInMemory[T])(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&shardMap.shards[hash]))))
 }
 
 // Set inserts or updates a key-value pair in the dynamic sharded map. Returns an error if the map is closed.
@@ -77,6 +79,12 @@ func (shardMap *DynamicShardedMapWithTTL[T]) Set(key string, value T) error {
 	}
 
 	hash := utils.GetTopHash(key)
+	// Fast path: check if shard exists with a single atomic load
+	if shard := (*types.ICacheInMemory[T])(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&shardMap.shards[hash])))); shard != nil {
+		return (*shard).Set(key, value)
+	}
+
+	// Slow path: initialize the shard if it doesn't exist
 	shard := shardMap.getShard(hash)
 	return shard.Set(key, value)
 }
@@ -89,6 +97,15 @@ func (shardMap *DynamicShardedMapWithTTL[T]) SetBatch(batch map[string]T) error 
 
 	for key, value := range batch {
 		hash := utils.GetTopHash(key)
+		// Fast path: check if shard exists with a single atomic load
+		if shard := (*types.ICacheInMemory[T])(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&shardMap.shards[hash])))); shard != nil {
+			if err := (*shard).Set(key, value); err != nil {
+				return err
+			}
+			continue
+		}
+
+		// Slow path: initialize the shard if it doesn't exist
 		shard := shardMap.getShard(hash)
 		if err := shard.Set(key, value); err != nil {
 			return err
@@ -105,8 +122,12 @@ func (shardMap *DynamicShardedMapWithTTL[T]) Get(key string) (T, bool) {
 	}
 
 	hash := utils.GetTopHash(key)
-	shard := shardMap.getShard(hash)
-	return shard.Get(key)
+	// Only get from the shard if it exists
+	if shard := (*types.ICacheInMemory[T])(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&shardMap.shards[hash])))); shard != nil {
+		return (*shard).Get(key)
+	}
+	// No need to initialize a shard just to check for a key that doesn't exist
+	return *new(T), false
 }
 
 // GetNodeValueWithMetrics retrieves the value and associated metadata for a specific key if it exists in the map.
@@ -125,9 +146,12 @@ func (shardMap *DynamicShardedMapWithTTL[T]) GetNodeValueWithMetrics(key string)
 	}
 
 	hash := utils.GetTopHash(key)
-	shard := shardMap.getShard(hash)
+	// Only get metrics from the shard if it exists
+	if shard := (*types.ICacheInMemory[T])(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&shardMap.shards[hash])))); shard != nil {
+		value, timeCreated, setCount, getCount, exists = (*shard).GetNodeValueWithMetrics(key)
+	}
+	// No need to initialize a shard just to check for metrics of a key that doesn't exist
 
-	value, timeCreated, setCount, getCount, exists = shard.GetNodeValueWithMetrics(key)
 	return value, timeCreated, setCount, getCount, exists
 }
 
@@ -175,9 +199,11 @@ func (shardMap *DynamicShardedMapWithTTL[T]) Delete(key string) {
 	}
 
 	hash := utils.GetTopHash(key)
+	// Only get and delete from the shard if it exists
 	if shard := (*types.ICacheInMemory[T])(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&shardMap.shards[hash])))); shard != nil {
 		(*shard).Delete(key)
 	}
+	// No need to initialize a shard just to delete a key that doesn't exist
 }
 
 // DeleteBatch removes multiple entries from the map for the provided keys if they exist and the map is not closed.
@@ -188,9 +214,11 @@ func (shardMap *DynamicShardedMapWithTTL[T]) DeleteBatch(keys []string) {
 
 	for _, key := range keys {
 		hash := utils.GetTopHash(key)
+		// Only get and delete from the shard if it exists
 		if shard := (*types.ICacheInMemory[T])(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&shardMap.shards[hash])))); shard != nil {
 			(*shard).Delete(key)
 		}
+		// No need to initialize a shard just to delete a key that doesn't exist
 	}
 }
 
